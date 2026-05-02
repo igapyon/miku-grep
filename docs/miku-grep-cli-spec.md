@@ -318,15 +318,19 @@ Glob matching does not cross path separators.
 
 Path-level include / exclude, such as `includePathPatterns` or `excludePathPatterns`, is outside MVP.
 
-MVP always applies the default exclude preset. There is no option to disable it.
+MVP applies the default exclude preset when `excludeFileNamePatterns` or `excludeDirNamePatterns` is omitted.
 
-Request `excludeFileNamePatterns` and `excludeDirNamePatterns` are additional excludes.
+Request `excludeFileNamePatterns` and `excludeDirNamePatterns` replace the corresponding default exclude preset when specified.
 
 Missing or empty `includeFileNamePatterns` means no include restriction.
 
-Missing or empty `excludeFileNamePatterns` means no request-level file exclude beyond the default exclude preset.
+Missing `excludeFileNamePatterns` means the default file exclude preset is used.
 
-Missing or empty `excludeDirNamePatterns` means no request-level directory exclude beyond the default exclude preset.
+Empty `excludeFileNamePatterns` means no file name excludes.
+
+Missing `excludeDirNamePatterns` means the default directory exclude preset is used.
+
+Empty `excludeDirNamePatterns` means no directory name excludes.
 
 Default exclude dir names:
 
@@ -363,8 +367,8 @@ Include / exclude priority:
 
 ```text
 1. If includeFileNamePatterns is specified, only matching files remain candidates.
-2. Default exclude preset is applied.
-3. Request excludeFileNamePatterns and excludeDirNamePatterns are applied.
+2. Effective excludeDirNamePatterns is applied to directory basenames.
+3. Effective excludeFileNamePatterns is applied to file basenames.
 ```
 
 ### dotfiles
@@ -448,10 +452,9 @@ Example:
 
 ## Binary Files
 
-MVP treats files as binary when either of the following is true.
+MVP treats files as binary when the file content contains a NUL byte during content search.
 
-- The file matches the default binary-like exclude file name patterns, such as `*.class`, `*.jar`, `*.zip`, `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, or `*.pdf`
-- The file content contains a NUL byte during content search
+The default file exclude preset excludes common binary-like file name patterns, such as `*.class`, `*.jar`, `*.zip`, `*.png`, `*.jpg`, `*.jpeg`, `*.gif`, and `*.pdf`, before content scanning unless `excludeFileNamePatterns` is specified and replaces that preset.
 
 Binary files are not searched in `content` mode.
 
@@ -545,8 +548,8 @@ Successful result example:
       "maxFilesVisited": 100000,
       "maxDirectoriesVisited": 10000,
       "includeFileNamePatterns": ["*.java", "*.md"],
-      "excludeFileNamePatterns": ["*.class", "*.jar", "*.zip", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.pdf", ".classpath", ".project", "*.generated.md"],
-      "excludeDirNamePatterns": [".git", ".svn", "node_modules", "target", "build", "dist", ".gradle", ".idea", ".vscode", ".settings", "vendor", "tmp"]
+      "excludeFileNamePatterns": ["*.generated.md"],
+      "excludeDirNamePatterns": ["tmp"]
     },
     "output": {
       "mode": "detail",

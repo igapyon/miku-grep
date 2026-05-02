@@ -105,6 +105,47 @@ describe("miku-grep filename and combined search", () => {
     expect(includeDoesNotMatchPath.summary.filesScanned).toBe(0);
   });
 
+  test("can include default-excluded zip files when exclude file patterns are empty", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "artifact.zip"), "not read for filename search\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "\\.zip$" },
+      search: {
+        target: "filename",
+        includeFileNamePatterns: ["*.zip"],
+        excludeFileNamePatterns: [],
+      },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.search.excludeFileNamePatterns).toEqual([]);
+    expect(result.matches).toEqual([{ type: "filename", file: "artifact.zip", matchedText: ".zip" }]);
+  });
+
+  test("omitted exclude file patterns keep default zip exclusion", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "artifact.zip"), "not read for filename search\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "\\.zip$" },
+      search: {
+        target: "filename",
+        includeFileNamePatterns: ["*.zip"],
+      },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.search.excludeFileNamePatterns).toContain("*.zip");
+    expect(result.matches).toEqual([]);
+  });
+
   test("filename-only search does not read undecodable file contents", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.writeFile(path.join(root, "bad-name.txt"), Buffer.from([0xff, 0xfe, 0xfd]));

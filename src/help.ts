@@ -70,12 +70,14 @@ REQUEST FIELDS
     MVP glob supports "*" and "?" within one basename.
 
   search.excludeFileNamePatterns
-    Optional additional basename glob excludes.
-    Default excludes are always applied.
+    Optional basename glob excludes.
+    When omitted, default excludes are used.
+    When specified, this value replaces default excludes.
 
   search.excludeDirNamePatterns
-    Optional additional directory basename glob excludes.
-    Default excludes are always applied.
+    Optional directory basename glob excludes.
+    When omitted, default excludes are used.
+    When specified, this value replaces default excludes.
 
   output.mode
     "file-summary" or "detail". Default: "file-summary".

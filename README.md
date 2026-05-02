@@ -162,7 +162,9 @@ traversal の resource limit として、`search.maxFilesVisited` の default �
 
 include / exclude は glob pattern です。`query.type: "regex"` は検索語の解釈だけを切り替えます。
 
-MVP では default exclude preset を常に適用し、無効化 option は持ちません。`.git`、`.svn`、`node_modules`、`target`、`build`、`dist`、`.gradle`、`.idea`、`.vscode`、`.settings`、`vendor` などを既定で除外します。
+MVP では `search.excludeFileNamePatterns` と `search.excludeDirNamePatterns` が未指定の場合に default exclude preset を適用します。`.git`、`.svn`、`node_modules`、`target`、`build`、`dist`、`.gradle`、`.idea`、`.vscode`、`.settings`、`vendor` などを既定で除外します。
+
+`search.excludeFileNamePatterns` または `search.excludeDirNamePatterns` を指定した場合、その配列は対応する default exclude preset を置き換えます。空配列 `[]` は、その種別の除外なしを意味します。
 
 ## encoding 方針
 
