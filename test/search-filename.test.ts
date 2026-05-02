@@ -45,6 +45,59 @@ describe("miku-grep filename and combined search", () => {
     ]);
   });
 
+  test("sorts file-summary paths by deterministic code-unit order", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs"), { recursive: true });
+    await fs.writeFile(path.join(root, "README.md"), "readme\n", "utf8");
+    await fs.writeFile(path.join(root, "docs", "development.md"), "development\n", "utf8");
+    await fs.writeFile(path.join(root, "docs", "cli-json-parity.md"), "parity\n", "utf8");
+    await fs.writeFile(path.join(root, "docs", "miku-grep-cli-spec.md"), "spec\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "\\.md$" },
+      search: {
+        target: "filename",
+        recursive: true,
+        maxDepth: 8,
+      },
+      output: {
+        mode: "file-summary",
+        maxMatches: 10000,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches.map((match) => match.file)).toEqual([
+      "README.md",
+      "docs/cli-json-parity.md",
+      "docs/development.md",
+      "docs/miku-grep-cli-spec.md",
+    ]);
+  });
+
+  test("sorts detail paths by deterministic code-unit order", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs"), { recursive: true });
+    await fs.writeFile(path.join(root, "README.md"), "readme\n", "utf8");
+    await fs.writeFile(path.join(root, "docs", "development.md"), "development\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "\\.md$" },
+      search: { target: "filename" },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([
+      { type: "filename", file: "README.md", matchedText: ".md" },
+      { type: "filename", file: "docs/development.md", matchedText: ".md" },
+    ]);
+  });
+
   test("aggregates filename and content hits in file-summary mode", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.mkdir(path.join(root, "src"), { recursive: true });
