@@ -990,14 +990,22 @@ scripts/
   stdio-example.mjs
 src/
   main.ts
+  public-types.ts
+  internal-types.ts
   types.ts
   bundle-entry.ts
 test/
-  miku-grep-cli.test.ts
+  cli-meta.test.ts
+  validation.test.ts
+  search-content.test.ts
+  search-filename.test.ts
+  encoding-diagnostics.test.ts
+  limits.test.ts
+  helpers.ts
 workplace/
 ```
 
-Development source files may be split as needed. The current Node implementation uses `src/main.ts` as the CLI entry module, `src/types.ts` for public request/result types, and `src/bundle-entry.ts` as the single-file bundle entry.
+Development source files may be split as needed. The current Node implementation uses `src/main.ts` as the CLI entry module, `src/public-types.ts` for public request/result types, `src/internal-types.ts` for implementation-only types, `src/types.ts` as a compatibility re-export facade, and `src/bundle-entry.ts` as the single-file bundle entry.
 
 The npm package `bin` entry points to `dist/main.js`.
 
