@@ -103,21 +103,22 @@
 
 - [x] validation implementation
   - 決定: MVP request validation は自前実装。
-  - TODO: 実装が肥大化した場合は JSON Schema 等の導入を再検討する。
+  - 現状: TypeScript 実装では `src/main.ts` の自前 validation で開始。
+  - TODO: 実装がさらに肥大化した場合は JSON Schema 等の導入を再検討する。
 
 - [x] Node module shape
   - 決定: 開発ソースは必要に応じて分割してよい。
   - 決定: 配布 runtime artifact は単一 `.mjs` (`bundle/miku-grep.mjs`) とする。
-  - TODO: package `bin` の正式なコマンド名と配置は実装時に決める。
+  - 実装: package `bin` は `miku-grep`、開発時 entry は `dist/main.js`、配布 runtime artifact は `bundle/miku-grep.mjs`。
 
 - [x] test runner
   - 決定: Vitest を候補として進める。
-  - TODO: 実装開始時に `package.json` と test script を確定する。
+  - 実装: `package.json` の `test` script は `vitest run`。
 
 - [x] Shift_JIS decoder
   - 決定: `iconv-lite` を使う。
   - 確認: npm の `iconv-lite` は MIT License。
-  - TODO: `package.json` に dependency として明記する。
+  - 実装: `package.json` の dependency に `iconv-lite` を明記。
 
 - [x] numeric safety limits
   - 決定: `search.maxDepth` の最大許容値は `50`。
@@ -149,3 +150,73 @@
   - 決定: exit code `2` / `3` でも、result JSON を安全に構築できる場合は stdout に返す。
   - 決定: malformed stdin、CLI usage error、unexpected runtime error などで result JSON を安全に構築できない場合は stderr-only を許容する。
   - 決定: caller は exit code を authoritative に扱う。
+
+## implementation follow-up
+
+- [x] README public path hygiene
+  - 実装: README の CLI specification link を repository-relative path に修正。
+
+- [x] package dry-run
+  - 確認: `npm_config_cache=.npm-cache npm pack --dry-run` で package contents を確認。
+  - 補足: default npm cache は local environment の権限問題で失敗したため、workspace-local cache を指定して確認した。
+
+- [x] CLI subprocess tests
+  - 実装: `dist/main.js` を subprocess として実行し、exit code / stdout JSON / stderr contract を確認。
+
+- [x] limit behavior tests
+  - 実装: `maxMatches` と `maxMatchesPerFile` 到達時の `summary` / `matches[]` / `diagnostics[]` をテストで固定。
+
+- [x] diagnostic code inventory
+  - validation / expected failure codes implemented:
+    - `invalid_request`
+    - `unknown_field`
+    - `invalid_version`
+    - `invalid_query_type`
+    - `invalid_search_target`
+    - `invalid_output_mode`
+    - `invalid_regex`
+    - `root_not_found`
+    - `root_not_accessible`
+    - `root_too_broad`
+    - `empty_query`
+    - `max_matches_too_large`
+    - `max_matches_per_file_too_large`
+    - `max_depth_too_large`
+    - `max_line_length_too_large`
+    - `max_snippets_per_file_too_large`
+    - `max_file_bytes_too_large`
+    - `invalid_encoding`
+    - `invalid_encoding_rule`
+  - runtime diagnostic codes implemented:
+    - `directory_not_readable`
+    - `symlink_skipped`
+    - `file_not_readable`
+    - `max_file_bytes_exceeded`
+    - `binary_file_skipped`
+    - `decode_error`
+    - `max_matches`
+    - `max_matches_per_file`
+    - `max_snippets_per_file`
+
+## later refactoring candidates
+
+まとめてリファクタリングする段階で検討する。
+
+- [ ] `helpText()` を `src/help.ts` に分離する
+  - 理由: AI agent 向けの自己説明が長く、CLI制御や検索実装と責務が異なる。
+
+- [ ] request validation を `src/validation.ts` に分離する
+  - 理由: validation code と effectiveRequest default展開が増えている。
+
+- [ ] traversal / file search を `src/search.ts` に分離する
+  - 理由: directory traversal、filename search、content search、limit処理を独立して読みやすくする。
+
+- [ ] glob / path matching を `src/glob.ts` または `src/path-utils.ts` に分離する
+  - 理由: include / exclude、encoding pathPattern、filename pattern の責務を明確にする。
+
+- [ ] diagnostics / summary helper を分離する
+  - 理由: diagnostic sorting、truncation diagnostic重複抑制、summary更新を局所化する。
+
+- [ ] tests を機能別に分割する
+  - 候補: `cli-meta.test.ts`、`validation.test.ts`、`search-content.test.ts`、`search-filename.test.ts`、`encoding.test.ts`、`bundle-smoke.test.ts`
+  - 理由: `test/miku-grep-cli.test.ts` がMVP仕様全体を保持して大きくなっている。

@@ -5,7 +5,8 @@ const request = {
   version: 1,
   root: ".",
   query: { type: "literal", text: "miku-grep" },
-  search: { target: "both", recursive: true, maxDepth: 3 },
+  // Exclude local npm pack cache logs so smoke output stays repository-focused.
+  search: { target: "both", recursive: true, maxDepth: 3, excludeDirNamePatterns: [".npm-cache"] },
   output: { mode: "file-summary", maxMatches: 20 }
 };
 

@@ -43,7 +43,8 @@
     "cli": "node dist/main.js",
     "pack:check": "npm pack --dry-run",
     "smoke": "node scripts/stdio-example.mjs",
-    "test": "vitest run"
+    "smoke:bundle": "node scripts/bundle-smoke.mjs",
+    "test": "tsc -p tsconfig.json && vitest run"
   },
   "dependencies": {
     "iconv-lite": "^0.7.2"
