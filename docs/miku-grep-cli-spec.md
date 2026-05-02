@@ -59,15 +59,22 @@ stdout result JSON should be pretty-printed with 2-space indentation and a trail
 JSON.stringify(result, null, 2) + "\n"
 ```
 
-`--version` is an exception to the stdin request JSON contract.
+`--version` and `--help` are exceptions to the stdin request JSON contract.
 
 ```bash
 miku-grep --version
+miku-grep --help
 ```
 
-It prints a short version string to stdout and exits with code `0`.
+`--version` prints a short version string to stdout and exits with code `0`.
 
-This command exists so release assets and Agent Skills can smoke-test a runtime artifact without preparing a request JSON.
+`--help` prints a self-contained command description to stdout and exits with code `0`.
+The help output should be detailed enough for an AI agent to understand the
+stdin / stdout contract, request fields, defaults, limits, result shape,
+diagnostics, and examples without reading the full specification.
+
+These commands exist so release assets and Agent Skills can inspect or smoke-test
+a runtime artifact without preparing a request JSON.
 
 The bundled `.mjs` runtime artifact should embed the package version at build time, such as `BUNDLED_PACKAGE_VERSION`, and `--version` should use that embedded value when package metadata is unavailable.
 
@@ -780,12 +787,48 @@ Limit example:
 ```json
 {
   "severity": "info",
-  "code": "max_matches_reached",
+  "code": "max_matches",
   "message": "search stopped because maxMatches was reached",
   "details": {
     "maxMatches": 200
   }
 }
+```
+
+### Diagnostic Codes
+
+Validation and expected-failure diagnostic codes are listed in
+`Validation Error Codes`.
+
+MVP runtime diagnostic codes include:
+
+```text
+directory_not_readable
+  directory could not be read and was skipped
+
+symlink_skipped
+  symlink was skipped because MVP does not follow symlinks
+
+file_not_readable
+  file could not be read and was skipped
+
+max_file_bytes_exceeded
+  file exceeded search.maxFileBytes and was skipped
+
+binary_file_skipped
+  file was treated as binary and skipped during content search
+
+decode_error
+  file could not be decoded with the applied encoding rule and was skipped
+
+max_matches
+  search stopped because output.maxMatches was reached
+
+max_matches_per_file
+  search for a file stopped because output.maxMatchesPerFile was reached
+
+max_snippets_per_file
+  file-summary snippets were omitted because output.maxSnippetsPerFile was reached
 ```
 
 ## Summary
@@ -942,17 +985,30 @@ Recommended development shape:
 ```text
 package.json
 scripts/
-  miku-grep-cli.mjs
   build-cli-bundle.mjs
+  bundle-smoke.mjs
   stdio-example.mjs
-tests/
+src/
+  main.ts
+  types.ts
+  bundle-entry.ts
+test/
+  miku-grep-cli.test.ts
 workplace/
 ```
 
-Development source files may be split as needed. The distribution/runtime artifact should be a single `.mjs` file: `bundle/miku-grep.mjs`.
+Development source files may be split as needed. The current Node implementation uses `src/main.ts` as the CLI entry module, `src/types.ts` for public request/result types, and `src/bundle-entry.ts` as the single-file bundle entry.
+
+The npm package `bin` entry points to `dist/main.js`.
+
+The distribution/runtime artifact should be a single `.mjs` file: `bundle/miku-grep.mjs`.
+
+`bundle/miku-grep-sources.tgz` should contain enough source files for rebuild, audit, and downstream verification.
 
 Shift_JIS decoding should use `iconv-lite`. The package is MIT licensed and must be listed as a dependency when implementation begins.
 
 `scripts/stdio-example.mjs` or an equivalent smoke script should demonstrate stdin request JSON / stdout result JSON operation.
+
+`scripts/bundle-smoke.mjs` or an equivalent smoke script should verify the single-file runtime artifact, including `--version`, `--help`, stdin JSON execution, and source archive contents.
 
 Verbose and progress messages must go to stderr. stdout is reserved for result JSON except for explicit meta commands such as `--version`.

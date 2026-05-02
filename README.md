@@ -4,7 +4,7 @@
 
 通常の `grep` の代わりに、検索結果、summary、diagnostics を JSON として返します。
 
-厳格な CLI / JSON 仕様は [docs/miku-grep-cli-spec.md](/Users/igapyon/Documents/git/miku-grep/docs/miku-grep-cli-spec.md) を参照してください。
+厳格な CLI / JSON 仕様は [docs/miku-grep-cli-spec.md](docs/miku-grep-cli-spec.md) を参照してください。
 
 ## 背景
 
@@ -22,7 +22,7 @@
 
 ## MVP
 
-MVP では次を扱います。
+現在の Node CLI MVP 実装では次を扱います。
 
 - Node CLI
 - stdin JSON 入力
@@ -36,6 +36,10 @@ MVP では次を扱います。
 - encoding rules
 - diagnostics
 - `detail` / `file-summary`
+- `--version`
+- `--help`
+
+`--help` は生成AI agent がそれだけを読んで request JSON を組み立てられるよう、stdin / stdout contract、request field、default、limit、result shape、diagnostic code、完全な stdin / stdout 例を含めています。
 
 ## CLI の基本形
 
@@ -58,6 +62,14 @@ runtime artifact の smoke test 用に、`--version` は stdin JSON なしで実
 ```bash
 miku-grep --version
 ```
+
+生成AI agent や automation がコマンド仕様を把握するために、`--help` も stdin JSON なしで実行できます。
+
+```bash
+miku-grep --help
+```
+
+`--help` は stdin / stdout contract、request field、default、limit、result shape、diagnostic code、完全な stdin / stdout 例、実行例を stdout に出力します。
 
 ## 最小 request 例
 
@@ -179,7 +191,7 @@ JavaScript 固有の regex flags は MVP では受け取りません。将来の
 
 ## 詳細仕様
 
-詳細は [miku-grep CLI Specification](/Users/igapyon/Documents/git/miku-grep/docs/miku-grep-cli-spec.md) にあります。
+詳細は [miku-grep CLI Specification](docs/miku-grep-cli-spec.md) にあります。
 
 主な内容:
 
@@ -193,6 +205,54 @@ JavaScript 固有の regex flags は MVP では受け取りません。将来の
 - default exclude preset
 - encoding policy
 - dangerous request handling
+
+## 開発
+
+依存関係を入れます。
+
+```bash
+npm install
+```
+
+テストを実行します。
+
+```bash
+npm test
+```
+
+`npm test` は TypeScript compile 後に Vitest を実行します。現状のテストは CLI contract、request validation、検索モード、encoding、diagnostics、sort、limit、bundle前提の subprocess実行をカバーしています。
+
+TypeScript compile、テスト、単一ファイル CLI bundle 生成をまとめて実行します。
+
+```bash
+npm run build
+```
+
+開発用 CLI の stdin / stdout smoke example を実行します。
+
+```bash
+npm run smoke
+```
+
+bundle 生成後に、単一ファイル runtime artifact の smoke test を実行します。
+
+```bash
+npm run smoke:bundle
+```
+
+主な生成物:
+
+- `dist/main.js`
+- `bundle/miku-grep.mjs`
+- `bundle/miku-grep-sources.tgz`
+
+`dist/main.js` は package `bin` が指す開発・npm package 用 CLI entry です。
+
+`bundle/miku-grep.mjs` は source tree なしで実行できる単一ファイル runtime artifact です。
+
+`bundle/miku-grep-sources.tgz` は再ビルド、監査、下流確認用の source archive です。
+
+npm package には、CLI実行用の `dist/`、単一ファイル runtime artifact の `bundle/`、smoke / bundle生成用の `scripts/`、`README.md`、`LICENSE` を含めます。
 
 ## 後続
 

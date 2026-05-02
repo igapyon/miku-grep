@@ -14,7 +14,7 @@ await build({
   platform: "node",
   format: "esm",
   banner: {
-    js: "#!/usr/bin/env node\nimport { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);"
+    js: "#!/usr/bin/env node\nimport { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);\nglobalThis.__MIKU_GREP_BUNDLE_ENTRY__ = true;"
   },
   define: {
     "globalThis.__MIKU_GREP_BUNDLED_PACKAGE_VERSION__": JSON.stringify(pkg.version)
