@@ -91,11 +91,11 @@ export async function runRequest(request: unknown): Promise<MikuGrepResult> {
     return finish(false, rootCheck.diagnostic.code, rootCheck.diagnostic.message, effectiveRequest, [], baseSummary, diagnostics);
   }
 
-  const searchResult = await runSearch(effectiveRequest, rootPath, diagnostics);
+  const searchResult = await runSearch(effectiveRequest, rootCheck.realPath, diagnostics);
   return finish(true, null, null, effectiveRequest, searchResult.matches, searchResult.summary, diagnostics);
 }
 
-async function checkRoot(rootPath: string, requestRoot: string): Promise<{ ok: true } | { ok: false; diagnostic: Diagnostic }> {
+async function checkRoot(rootPath: string, requestRoot: string): Promise<{ ok: true; realPath: string } | { ok: false; diagnostic: Diagnostic }> {
   if (path.parse(rootPath).root === rootPath || rootPath === homeDirectory()) {
     return rootError("root_too_broad", "root is too broad", requestRoot);
   }
@@ -103,7 +103,8 @@ async function checkRoot(rootPath: string, requestRoot: string): Promise<{ ok: t
     const stat = await fs.stat(rootPath);
     if (!stat.isDirectory()) return rootError("root_not_accessible", "root is not a directory", requestRoot);
     await fs.access(rootPath, fsConstants.R_OK);
-    return { ok: true };
+    const realPath = await fs.realpath(rootPath);
+    return { ok: true, realPath };
   } catch (error) {
     const code = isNodeError(error) && error.code === "ENOENT" ? "root_not_found" : "root_not_accessible";
     return rootError(code, code === "root_not_found" ? "root does not exist" : "root is not accessible", requestRoot);

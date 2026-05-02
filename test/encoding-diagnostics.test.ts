@@ -97,6 +97,26 @@ describe("miku-grep encoding and diagnostics", () => {
     );
   });
 
+  test("does not read files through symlinks that point outside request root", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-outside-"));
+    await fs.writeFile(path.join(outside, "secret.txt"), "RepositoryMap\n", "utf8");
+    await fs.symlink(outside, path.join(root, "outside"));
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { target: "content" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ severity: "info", code: "symlink_skipped", path: "outside", skipped: true })]),
+    );
+  });
+
   test("reports decode errors and strips UTF-8 BOM before matching", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.writeFile(path.join(root, "bad.txt"), Buffer.from([0xff, 0xfe, 0xfd]));

@@ -175,6 +175,8 @@
     - `invalid_search_target`
     - `invalid_output_mode`
     - `invalid_regex`
+    - `regex_too_large`
+    - `unsafe_regex`
     - `root_not_found`
     - `root_not_accessible`
     - `root_too_broad`
@@ -182,6 +184,9 @@
     - `max_matches_too_large`
     - `max_matches_per_file_too_large`
     - `max_depth_too_large`
+    - `max_line_chars_too_large`
+    - `max_files_visited_too_large`
+    - `max_directories_visited_too_large`
     - `max_line_length_too_large`
     - `max_snippets_per_file_too_large`
     - `max_file_bytes_too_large`
@@ -194,9 +199,48 @@
     - `max_file_bytes_exceeded`
     - `binary_file_skipped`
     - `decode_error`
+    - `max_line_chars_exceeded`
+    - `path_escape_skipped`
     - `max_matches`
     - `max_matches_per_file`
     - `max_snippets_per_file`
+    - `max_files_visited`
+    - `max_directories_visited`
+
+## security follow-up
+
+- [x] Regex ReDoS 対策を検討・実装する
+  - 現状: `query.type: "regex"` は Node.js `RegExp` を直接使う。
+  - リスク: catastrophic backtracking により CPU を長時間消費する可能性がある。
+  - 実装: regex pattern length 上限と nested quantified group の最小 heuristic reject を追加。
+  - 残課題: 完全な ReDoS 対策ではないため、RE2 系 engine または worker thread timeout は必要になった段階で再検討する。
+
+- [x] traversal / file count DoS 対策を追加する
+  - 現状: `maxDepth`、`maxFileBytes`、match limit はあるが、訪問ファイル数・訪問ディレクトリ数の上限はない。
+  - 実装: `search.maxFilesVisited`、`search.maxDirectoriesVisited` を追加し、limit 到達時に `max_files_visited` / `max_directories_visited` diagnostic を返す。
+
+- [x] TOCTOU リスクを整理する
+  - 現状: `fs.realpath()` で root 境界を確認してから `fs.readFile()` する。
+  - リスク: 確認後から read 前までに file が差し替えられる可能性がある。
+  - 実装: local-first CLI としての残リスクを security docs に明記。file descriptor ベースの実装は必要になった段階で再検討する。
+
+- [x] filename / diagnostics による情報漏えいを整理する
+  - filename search は content を読まなくても file / path 名を返す。
+  - diagnostics は unreadable path、decode error、path escape など repository 構造を返す。
+  - 実装: security docs に agent 向け利便性と権限境界としての扱いを明記。
+
+- [x] long line / binary-like text の resource risk を検討する
+  - `maxLineLength` は output snippet 制限であり、入力 line 処理そのものの上限ではない。
+  - NUL を含まない binary-like file は decode / line split 対象になり得る。
+  - 実装: `search.maxLineChars` を追加し、超過行は `max_line_chars_exceeded` diagnostic として skip。
+  - 残課題: NUL を含まない binary-like file の byte heuristic や追加 default exclude は必要になった段階で再検討する。
+
+- [x] downstream injection / prompt injection を docs に追記する
+  - `miku-grep` は JSON として escape して返すが、caller が shell / HTML / SQL / Markdown / prompt に再埋め込みする場合は別途 escape が必要。
+  - 実装: 検索結果本文は信頼できない入力であり、agent が命令として扱わないことを security docs に明記。
+
+- [x] security 実装と CLI spec の同期を取る
+  - 実装: `request.root` realpath 境界チェック、`path_escape_skipped`、traversal limit、security diagnostic の扱いを `docs/miku-grep-cli-spec.md` に反映。
 
 ## later refactoring candidates
 

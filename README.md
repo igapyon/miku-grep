@@ -6,6 +6,8 @@
 
 厳格な CLI / JSON 仕様は [docs/miku-grep-cli-spec.md](docs/miku-grep-cli-spec.md) を参照してください。
 
+セキュリティに関する調査結果と対策は [docs/miku-grep-security.md](docs/miku-grep-security.md) を参照してください。
+
 ## 背景
 
 生成AI agent と repository を扱っていると、通常の grep だけでは足りない場面があります。
@@ -144,6 +146,8 @@ both
 
 `request.root` が相対パスの場合、CLI process の current working directory から解決します。
 
+探索中に realpath が `request.root` の realpath 外へ解決される path は skip して diagnostics に返します。
+
 result JSON 内の `file` は `request.root` からの相対パスです。絶対パスは返しません。path separator は platform に関わらず常に `/` です。
 
 `recursive: true` で `maxDepth` を省略した場合、MVP では `20` として扱います。
@@ -151,6 +155,8 @@ result JSON 内の `file` は `request.root` からの相対パスです。絶�
 `maxDepth` の最大許容値は `50` です。
 
 `recursive` 未指定時は `true` です。
+
+traversal の resource limit として、`search.maxFilesVisited` の default は `100000`、最大許容値は `1000000` です。`search.maxDirectoriesVisited` の default は `10000`、最大許容値は `100000` です。
 
 ## 除外の基本方針
 
@@ -177,6 +183,8 @@ content 検索では `search.maxFileBytes` の default を 10 MiB とし、超�
 
 `search.maxFileBytes` の最大許容値は 100 MiB です。
 
+decode 後の 1 行が `search.maxLineChars` を超える場合、その行は skip して diagnostics に返します。default は `1000000`、最大許容値は `10000000` です。
+
 ## regex と case
 
 MVP の検索は case-sensitive です。
@@ -188,6 +196,8 @@ MVP の検索は case-sensitive です。
 MVP Node CLI の regex は Node.js `RegExp` を使い、content 検索では行ごとに match します。複数行 regex は MVP 外です。
 
 JavaScript 固有の regex flags は MVP では受け取りません。将来の Java CLI では regex engine が異なる可能性があるため、cross-runtime の完全同一挙動は保証しません。
+
+regex pattern text は 1000 文字以下に制限します。`(.+)+` や `(a*)+` のような nested quantified group は ReDoS リスクを避けるため validation error とします。
 
 ## 詳細仕様
 

@@ -162,6 +162,8 @@ Result `file` values are relative paths from `request.root`. Absolute paths must
 
 Result paths must use `/` as the path separator on every platform, including Windows.
 
+The implementation should resolve `request.root` with realpath semantics and treat that realpath as the search boundary. During traversal, if a directory or file resolves outside the root realpath, it must be skipped and reported as a diagnostic instead of being read.
+
 Examples:
 
 ```text
@@ -215,6 +217,10 @@ Content regex search is applied line by line. Multi-line regex matching is outsi
 
 MVP does not accept JavaScript-specific regex flags.
 
+Regex pattern text must not exceed 1000 characters.
+
+Implementations should reject common ReDoS-prone nested quantified groups, such as `(.+)+` or `(a*)+`, as `unsafe_regex`.
+
 A future Java CLI may use Java's regex engine. Cross-runtime regex behavior is not guaranteed to be identical for all edge cases. Prefer portable basic regex patterns when the same request should work across Node and Java runtimes.
 
 ### search
@@ -257,9 +263,36 @@ Search defaults:
 {
   "recursive": true,
   "maxDepth": 20,
-  "maxFileBytes": 10485760
+  "maxFileBytes": 10485760,
+  "maxLineChars": 1000000,
+  "maxFilesVisited": 100000,
+  "maxDirectoriesVisited": 10000
 }
 ```
+
+### traversal resource limits
+
+`search.maxFilesVisited` limits the number of files discovered by traversal before include / exclude and binary skip.
+
+Default: `100000`
+
+Maximum: `1000000`
+
+`search.maxDirectoriesVisited` limits the number of directories entered by traversal.
+
+Default: `10000`
+
+Maximum: `100000`
+
+### maxLineChars
+
+`search.maxLineChars` limits the number of decoded characters searched from a single line.
+
+Default: `1000000`
+
+Maximum: `10000000`
+
+Lines longer than `search.maxLineChars` are skipped for content search and reported in `diagnostics[]`.
 
 ### include / exclude
 
@@ -508,6 +541,9 @@ Successful result example:
       "recursive": true,
       "maxDepth": 8,
       "maxFileBytes": 10485760,
+      "maxLineChars": 1000000,
+      "maxFilesVisited": 100000,
+      "maxDirectoriesVisited": 10000,
       "includeFileNamePatterns": ["*.java", "*.md"],
       "excludeFileNamePatterns": ["*.class", "*.jar", "*.zip", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.pdf", ".classpath", ".project", "*.generated.md"],
       "excludeDirNamePatterns": [".git", ".svn", "node_modules", "target", "build", "dist", ".gradle", ".idea", ".vscode", ".settings", "vendor", "tmp"]
@@ -576,7 +612,10 @@ Expected failure example:
       "target": "content",
       "recursive": true,
       "maxDepth": 8,
-      "maxFileBytes": 10485760
+      "maxFileBytes": 10485760,
+      "maxLineChars": 1000000,
+      "maxFilesVisited": 100000,
+      "maxDirectoriesVisited": 10000
     },
     "output": {
       "mode": "detail",
@@ -815,11 +854,17 @@ file_not_readable
 max_file_bytes_exceeded
   file exceeded search.maxFileBytes and was skipped
 
+max_line_chars_exceeded
+  line exceeded search.maxLineChars and was skipped
+
 binary_file_skipped
   file was treated as binary and skipped during content search
 
 decode_error
   file could not be decoded with the applied encoding rule and was skipped
+
+path_escape_skipped
+  path resolved outside request.root realpath and was skipped
 
 max_matches
   search stopped because output.maxMatches was reached
@@ -829,6 +874,12 @@ max_matches_per_file
 
 max_snippets_per_file
   file-summary snippets were omitted because output.maxSnippetsPerFile was reached
+
+max_files_visited
+  search stopped because search.maxFilesVisited was reached
+
+max_directories_visited
+  search stopped because search.maxDirectoriesVisited was reached
 ```
 
 ## Summary
@@ -874,7 +925,7 @@ truncated
 
 truncatedReason
   Main truncation reason when truncated is true.
-  Candidate values: max_matches / max_matches_per_file / max_line_length / max_snippets_per_file
+  Candidate values: max_matches / max_matches_per_file / max_line_length / max_snippets_per_file / max_line_chars_exceeded / max_files_visited / max_directories_visited
 ```
 
 ## Dangerous Requests
@@ -891,6 +942,9 @@ Examples:
 - `maxMatches` is too large
 - `maxMatchesPerFile` is too large
 - `maxDepth` is too large
+- `maxLineChars` is too large
+- `maxFilesVisited` is too large
+- `maxDirectoriesVisited` is too large
 - `maxLineLength` is too large
 - `maxSnippetsPerFile` is too large
 - `maxFileBytes` is too large
@@ -911,6 +965,8 @@ invalid_query_type
 invalid_search_target
 invalid_output_mode
 invalid_regex
+regex_too_large
+unsafe_regex
 root_not_found
 root_not_accessible
 root_too_broad
@@ -918,6 +974,9 @@ empty_query
 max_matches_too_large
 max_matches_per_file_too_large
 max_depth_too_large
+max_line_chars_too_large
+max_files_visited_too_large
+max_directories_visited_too_large
 max_line_length_too_large
 max_snippets_per_file_too_large
 max_file_bytes_too_large

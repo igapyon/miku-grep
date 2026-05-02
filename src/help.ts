@@ -56,6 +56,15 @@ REQUEST FIELDS
   search.maxFileBytes
     Content-read size limit. Default: 10485760. Maximum: 104857600.
 
+  search.maxLineChars
+    Per-line scan limit after decode. Default: 1000000. Maximum: 10000000.
+
+  search.maxFilesVisited
+    Traversal file visit limit. Default: 100000. Maximum: 1000000.
+
+  search.maxDirectoriesVisited
+    Traversal directory visit limit. Default: 10000. Maximum: 100000.
+
   search.includeFileNamePatterns
     Optional glob array. Empty or missing means no include restriction.
     MVP glob supports "*" and "?" within one basename.
@@ -207,14 +216,18 @@ COMMON DIAGNOSTIC CODES
   Validation / expected failures:
     invalid_request, unknown_field, invalid_version, invalid_query_type,
     invalid_search_target, invalid_output_mode, invalid_regex,
+    regex_too_large, unsafe_regex,
     root_not_found, root_not_accessible, root_too_broad, empty_query,
     max_matches_too_large, max_matches_per_file_too_large, max_depth_too_large,
     max_line_length_too_large, max_snippets_per_file_too_large,
-    max_file_bytes_too_large, invalid_encoding, invalid_encoding_rule
+    max_file_bytes_too_large, max_line_chars_too_large, max_files_visited_too_large,
+    max_directories_visited_too_large, invalid_encoding, invalid_encoding_rule
   Runtime diagnostics:
     directory_not_readable, symlink_skipped, file_not_readable,
     max_file_bytes_exceeded, binary_file_skipped, decode_error,
-    max_matches, max_matches_per_file, max_snippets_per_file
+    path_escape_skipped, max_matches, max_matches_per_file,
+    max_snippets_per_file, max_line_chars_exceeded,
+    max_files_visited, max_directories_visited
 
 EXAMPLES
   Content search:
