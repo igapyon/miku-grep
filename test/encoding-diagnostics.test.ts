@@ -153,6 +153,24 @@ describe("miku-grep encoding and diagnostics", () => {
     expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["symlink_skipped", "decode_error"]);
   });
 
+  test("sorts diagnostics paths by deterministic code-unit order", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs"), { recursive: true });
+    await fs.writeFile(path.join(root, "README-bad.txt"), Buffer.from([0xff, 0xfe, 0xfd]));
+    await fs.writeFile(path.join(root, "target.txt"), "RepositoryMap\n", "utf8");
+    await fs.symlink(path.join(root, "target.txt"), path.join(root, "docs", "link.txt"));
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.file ?? diagnostic.path)).toEqual(["README-bad.txt", "docs/link.txt"]);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["decode_error", "symlink_skipped"]);
+  });
+
   test("gives pathPattern encoding rules priority over fileNamePattern rules", async () => {
     const root = await fixture();
     const result = await runRequest({

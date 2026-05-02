@@ -4,6 +4,7 @@ import iconv from "iconv-lite";
 import { globMatch, matchesAny, pathGlobMatch } from "./glob.js";
 import { isPathInsideOrSame } from "./path-security.js";
 import { createSummary } from "./result.js";
+import { compareStrings } from "./string-order.js";
 import type { SearchResult, SearchState } from "./internal-types.js";
 import type {
   DetailMatch,
@@ -54,7 +55,7 @@ async function traverse(state: SearchState, absoluteDir: string, relativeDir: st
     state.diagnostics.push({ severity: "warning", code: "directory_not_readable", message: "directory could not be read and was skipped", path: relativeDir || ".", skipped: true });
     return;
   }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
+  entries.sort((a, b) => compareStrings(a.name, b.name));
   for (const entry of entries) {
     if (state.globalLimitReached) return;
     const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
@@ -259,13 +260,13 @@ function markTruncated(state: SearchState, reason: string, message: string, deta
 
 function buildDetailMatches(state: SearchState): DetailMatch[] {
   return [...state.detailsByFile.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareStrings(a, b))
     .flatMap(([, hits]) => hits.sort((a, b) => typeRank(a.type) - typeRank(b.type) || ((a.type === "content" ? a.line : 0) - (b.type === "content" ? b.line : 0)) || ((a.type === "content" ? a.column : 0) - (b.type === "content" ? b.column : 0))));
 }
 
 function buildFileSummaryMatches(state: SearchState): FileSummaryMatch[] {
   return [...state.summariesByFile.values()]
-    .sort((a, b) => a.file.localeCompare(b.file))
+    .sort((a, b) => compareStrings(a.file, b.file))
     .map((item) => ({ ...item, lines: item.lines.sort((a, b) => a - b) }));
 }
 

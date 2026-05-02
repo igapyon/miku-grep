@@ -993,6 +993,8 @@ MVP output should be stable.
 
 File traversal and matched files are sorted by request.root-relative file path ascending where practical.
 
+All path and diagnostic-code string ordering uses deterministic UTF-16 code unit order, equivalent to Java `String.compareTo`, and must not use locale-aware collation.
+
 Content hits are sorted by line ascending within each file.
 
 When `search.target: "both"` produces both filename and content hits for the same file in `detail` mode, filename hits should appear before content hits for that file.

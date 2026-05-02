@@ -1,4 +1,5 @@
 import type { DetailMatch, Diagnostic, EffectiveRequest, FileSummaryMatch, MikuGrepResult, Summary } from "./public-types.js";
+import { compareStrings } from "./string-order.js";
 import { VERSION } from "./validation.js";
 
 export function createSummary(): Summary {
@@ -34,5 +35,5 @@ export function finish(
 }
 
 function sortDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
-  return diagnostics.sort((a, b) => (a.file ?? a.path ?? "").localeCompare(b.file ?? b.path ?? "") || ((a.line ?? 0) - (b.line ?? 0)) || a.code.localeCompare(b.code));
+  return diagnostics.sort((a, b) => compareStrings(a.file ?? a.path ?? "", b.file ?? b.path ?? "") || ((a.line ?? 0) - (b.line ?? 0)) || compareStrings(a.code, b.code));
 }
