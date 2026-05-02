@@ -1,0 +1,57 @@
+{
+  "name": "miku-grep",
+  "version": "0.1.0",
+  "description": "Local-first structured grep CLI for AI agents and automation.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igapyon/miku-grep.git"
+  },
+  "homepage": "https://github.com/igapyon/miku-grep#readme",
+  "bugs": {
+    "url": "https://github.com/igapyon/miku-grep/issues"
+  },
+  "keywords": [
+    "cli",
+    "grep",
+    "search",
+    "json",
+    "ai"
+  ],
+  "bin": {
+    "miku-grep": "./dist/main.js"
+  },
+  "exports": {
+    ".": "./dist/main.js"
+  },
+  "types": "./dist/main.d.ts",
+  "files": [
+    "dist/",
+    "bundle/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "clean": "node --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true }); rmSync('bundle', { recursive: true, force: true });\"",
+    "build": "npm run clean && tsc -p tsconfig.json && node --eval \"import { chmodSync } from 'node:fs'; chmodSync('dist/main.js', 0o755);\" && npm test && npm run build:cli-bundle",
+    "build:cli-bundle": "node scripts/build-cli-bundle.mjs",
+    "cli": "node dist/main.js",
+    "pack:check": "npm pack --dry-run",
+    "smoke": "node scripts/stdio-example.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.0"
+  }
+}
