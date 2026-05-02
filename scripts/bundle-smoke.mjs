@@ -50,7 +50,17 @@ if (archiveResult.status !== 0) {
   process.exit(1);
 }
 const archiveEntries = new Set(archiveResult.stdout.trim().split("\n"));
-for (const entry of ["package.json", "src/main.ts", "src/types.ts", "test/miku-grep-cli.test.ts", "scripts/build-cli-bundle.mjs"]) {
+for (const entry of [
+  "package.json",
+  "src/main.ts",
+  "src/types.ts",
+  "src/public-types.ts",
+  "src/internal-types.ts",
+  "test/helpers.ts",
+  "test/cli-meta.test.ts",
+  "test/search-content.test.ts",
+  "scripts/build-cli-bundle.mjs",
+]) {
   if (!archiveEntries.has(entry)) {
     process.stderr.write(`source archive missing ${entry}\n`);
     process.exit(1);

@@ -202,21 +202,58 @@
 
 まとめてリファクタリングする段階で検討する。
 
-- [ ] `helpText()` を `src/help.ts` に分離する
+### Refactoring guardrails
+
+- [x] 外部CLI契約を変えない
+  - `stdin` request JSON / `stdout` result JSON / `stderr` 方針 / exit code を維持する。
+  - `--version` / `--help` の挙動を維持する。
+  - `bundle/miku-grep.mjs` と `bundle/miku-grep-sources.tgz` の生成・smoke確認を維持する。
+  - 確認: `npm test` / `npm run build` / `npm run smoke` / `npm run smoke:bundle` / `npm_config_cache=.npm-cache npm pack --dry-run` が成功。
+
+- [x] リファクタリング単位ごとに `npm test` を通す
+  - 機能変更ではなく責務分離が目的なので、既存テストを安全網として使う。
+  - 最終確認は `npm run build` / `npm run smoke` / `npm run smoke:bundle` / `npm_config_cache=.npm-cache npm pack --dry-run`。
+  - 確認: `help` / `glob` / `validation` / `result` / `search` 分離後に `npm test` が成功。
+
+### Recommended refactoring order
+
+- [x] 1. `helpText()` を `src/help.ts` に分離する
   - 理由: AI agent 向けの自己説明が長く、CLI制御や検索実装と責務が異なる。
+  - 完了条件: `src/main.ts` は `helpText` を import して呼ぶだけにする。help文面と既存helpテストは変更しない。
+  - 実装: `src/help.ts` に分離し、`src/main.ts` から re-export して既存 import contract を維持。
 
-- [ ] request validation を `src/validation.ts` に分離する
-  - 理由: validation code と effectiveRequest default展開が増えている。
-
-- [ ] traversal / file search を `src/search.ts` に分離する
-  - 理由: directory traversal、filename search、content search、limit処理を独立して読みやすくする。
-
-- [ ] glob / path matching を `src/glob.ts` または `src/path-utils.ts` に分離する
+- [x] 2. glob / path matching を `src/glob.ts` または `src/path-utils.ts` に分離する
   - 理由: include / exclude、encoding pathPattern、filename pattern の責務を明確にする。
+  - 完了条件: `globMatch` / path pattern matching / `matchesAny` を独立させ、検索・encoding selection から再利用する。
+  - 実装: `src/glob.ts` に分離し、`src/main.ts` から `globMatch` を re-export して既存 import contract を維持。
 
-- [ ] diagnostics / summary helper を分離する
+- [x] 3. request validation を `src/validation.ts` に分離する
+  - 理由: validation code と effectiveRequest default展開が増えている。
+  - 完了条件: `validateAndNormalize`、validation helper、default値、limit値、default exclude preset を validation module 側に寄せる。`runRequest` は validation result を受け取るだけにする。
+  - 実装: `src/validation.ts` に分離し、`VERSION` / default値 / limit値 / default exclude preset / validation helper を移動。
+
+- [x] 4. diagnostics / summary helper を `src/result.ts` または `src/diagnostics.ts` に分離する
   - 理由: diagnostic sorting、truncation diagnostic重複抑制、summary更新を局所化する。
+  - 完了条件: `createSummary` / `finish` / `sortDiagnostics` / truncation helper の責務をまとめ、検索処理が result formatting の詳細を持ちすぎない状態にする。
+  - 実装: `src/result.ts` に `createSummary` / `finish` / diagnostic sorting を分離。truncation helper は検索状態に依存するため、`src/search.ts` 分離時に検索 module 側へ閉じ込める。
 
-- [ ] tests を機能別に分割する
-  - 候補: `cli-meta.test.ts`、`validation.test.ts`、`search-content.test.ts`、`search-filename.test.ts`、`encoding.test.ts`、`bundle-smoke.test.ts`
+- [x] 5. traversal / file search を `src/search.ts` に分離する
+  - 理由: directory traversal、filename search、content search、limit処理を独立して読みやすくする。
+  - 完了条件: `runRequest` は root check、validation、search実行、finish の流れだけを表す。`SearchState` と検索内部 helper は search module に閉じる。
+  - 実装: `src/search.ts` に `runSearch`、`SearchState`、traversal、content / filename search、limit / truncation helper を分離。
+
+- [x] 6. tests を機能別に分割する
+  - 候補: `cli-meta.test.ts`、`validation.test.ts`、`search-content.test.ts`、`search-filename.test.ts`、`encoding.test.ts`、`limits.test.ts`、`subprocess.test.ts`
   - 理由: `test/miku-grep-cli.test.ts` がMVP仕様全体を保持して大きくなっている。
+  - 完了条件: test helper / fixture helper を共通化し、各テストファイルの関心を1つに絞る。
+  - 実装: `test/helpers.ts` に fixture / stdio helper を共通化し、CLI meta、validation、content search、filename/both search、encoding/diagnostics、limits に分割。
+
+### Deferred refactoring ideas
+
+- [x] `src/types.ts` の公開型と内部型の境界を見直す
+  - 現時点では実装分割後に判断する。先に型だけを動かすと差分が読みにくくなるため後回し。
+  - 実装: 公開 JSON contract 型を `src/public-types.ts` に分離し、`src/types.ts` は互換用 re-export facade として維持。モジュール間だけで使う `ValidationResult` / `SearchResult` / `SearchState` は `src/internal-types.ts` に分離。
+
+- [x] JSON Schema 導入を再検討する
+  - 現時点では自前validationを維持する。分離後も validation が肥大化する場合のみ再検討する。
+  - 判断: 現状は public schema が小さく、未知 field / default 展開 / diagnostic code を自前 validation で明示できているため、MVP では JSON Schema を導入しない。
