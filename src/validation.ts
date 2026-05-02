@@ -32,6 +32,8 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     return invalid("invalid_request", "search, output, and encoding must be objects when specified");
   }
 
+  const hasExcludeFileNamePatterns = hasOwn(searchInput, "excludeFileNamePatterns");
+  const hasExcludeDirNamePatterns = hasOwn(searchInput, "excludeDirNamePatterns");
   const search = {
     target: typeof searchInput.target === "string" ? searchInput.target : DEFAULTS.search.target,
     recursive: searchInput.recursive ?? DEFAULTS.search.recursive,
@@ -41,8 +43,8 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     maxFilesVisited: searchInput.maxFilesVisited ?? DEFAULTS.search.maxFilesVisited,
     maxDirectoriesVisited: searchInput.maxDirectoriesVisited ?? DEFAULTS.search.maxDirectoriesVisited,
     includeFileNamePatterns: searchInput.includeFileNamePatterns ?? [],
-    excludeFileNamePatterns: searchInput.excludeFileNamePatterns ?? [],
-    excludeDirNamePatterns: searchInput.excludeDirNamePatterns ?? [],
+    excludeFileNamePatterns: hasExcludeFileNamePatterns ? searchInput.excludeFileNamePatterns : DEFAULT_EXCLUDE_FILES,
+    excludeDirNamePatterns: hasExcludeDirNamePatterns ? searchInput.excludeDirNamePatterns : DEFAULT_EXCLUDE_DIRS,
   };
   if (!["content", "filename", "both"].includes(search.target)) return invalid("invalid_search_target", "search.target must be content, filename, or both");
   if (typeof search.recursive !== "boolean") return invalid("invalid_request", "search.recursive must be boolean");
@@ -116,8 +118,8 @@ export function validateAndNormalize(request: unknown): ValidationResult {
       maxFilesVisited: search.maxFilesVisited as number,
       maxDirectoriesVisited: search.maxDirectoriesVisited as number,
       includeFileNamePatterns,
-      excludeFileNamePatterns: [...DEFAULT_EXCLUDE_FILES, ...excludeFileNamePatterns],
-      excludeDirNamePatterns: [...DEFAULT_EXCLUDE_DIRS, ...excludeDirNamePatterns],
+      excludeFileNamePatterns,
+      excludeDirNamePatterns,
     },
     output: {
       mode: output.mode as EffectiveRequest["output"]["mode"],
@@ -162,6 +164,10 @@ function findUnknownField(value: unknown, shape: Record<string, true | Record<st
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function isSafeInteger(value: unknown): value is number {

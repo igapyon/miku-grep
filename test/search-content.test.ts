@@ -106,6 +106,42 @@ describe("miku-grep content search", () => {
     expect(nonRecursive.effectiveRequest.search.maxDepth).toBe(0);
   });
 
+  test("can include default-excluded directories when exclude directory patterns are empty", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "node_modules", "pkg"), { recursive: true });
+    await fs.writeFile(path.join(root, "node_modules", "pkg", "index.txt"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { target: "content", excludeDirNamePatterns: [] },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.search.excludeDirNamePatterns).toEqual([]);
+    expect(result.matches).toEqual([expect.objectContaining({ file: "node_modules/pkg/index.txt" })]);
+  });
+
+  test("omitted exclude directory patterns keep default node_modules exclusion", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "node_modules", "pkg"), { recursive: true });
+    await fs.writeFile(path.join(root, "node_modules", "pkg", "index.txt"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { target: "content" },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.search.excludeDirNamePatterns).toContain("node_modules");
+    expect(result.matches).toEqual([]);
+  });
+
   test("applies maxDepth to recursive traversal", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.mkdir(path.join(root, "a", "b"), { recursive: true });

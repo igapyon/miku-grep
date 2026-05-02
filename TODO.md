@@ -64,8 +64,8 @@
 
 - [x] empty arrays
   - 決定: `includeFileNamePatterns` missing or `[]` は include 制限なし。
-  - 決定: `excludeFileNamePatterns` missing or `[]` は default exclude preset のみ。
-  - 決定: `excludeDirNamePatterns` missing or `[]` は default exclude preset のみ。
+  - 決定: `excludeFileNamePatterns` missing は default exclude preset、指定ありは default exclude preset の置き換え、`[]` は file name 除外なし。
+  - 決定: `excludeDirNamePatterns` missing は default exclude preset、指定ありは default exclude preset の置き換え、`[]` は directory name 除外なし。
 
 ## implementation preflight decisions
 

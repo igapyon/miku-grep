@@ -75,6 +75,32 @@ describe("miku-grep request validation", () => {
     expect(result.error?.code).toBe("unknown_field");
   });
 
+  test("uses request exclude file patterns as replacement for default excludes", async () => {
+    const root = await fixture();
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { excludeFileNamePatterns: [] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.search.excludeFileNamePatterns).toEqual([]);
+  });
+
+  test("uses request exclude directory patterns as replacement for default excludes", async () => {
+    const root = await fixture();
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { excludeDirNamePatterns: [] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.search.excludeDirNamePatterns).toEqual([]);
+  });
+
   test.each([
     ["non-object request", null, "invalid_request"],
     ["non-object search", (root: string) => ({ ...baseRequest(root), search: [] }), "invalid_request"],
@@ -83,6 +109,8 @@ describe("miku-grep request validation", () => {
     ["non-string include pattern", (root: string) => ({ ...baseRequest(root), search: { includeFileNamePatterns: ["*.txt", 1] } }), "invalid_request"],
     ["non-string exclude file pattern", (root: string) => ({ ...baseRequest(root), search: { excludeFileNamePatterns: [false] } }), "invalid_request"],
     ["non-string exclude dir pattern", (root: string) => ({ ...baseRequest(root), search: { excludeDirNamePatterns: [{}] } }), "invalid_request"],
+    ["null exclude file pattern", (root: string) => ({ ...baseRequest(root), search: { excludeFileNamePatterns: null } }), "invalid_request"],
+    ["null exclude dir pattern", (root: string) => ({ ...baseRequest(root), search: { excludeDirNamePatterns: null } }), "invalid_request"],
     ["unknown encoding rule field", (root: string) => ({ ...baseRequest(root), encoding: { rules: [{ fileNamePattern: "*.txt", encoding: "utf-8", extra: true }] } }), "unknown_field"],
   ])("rejects invalid request shape: %s", async (_caseName, createRequest, expectedCode) => {
     const root = await fixture();
