@@ -63,4 +63,71 @@ describe("miku-grep output limits", () => {
     expect(result.summary.truncatedReason).toBe("max_matches_per_file");
     expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "max_matches_per_file")).toHaveLength(2);
   });
+
+  test("stops traversal at maxFilesVisited", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "a.txt"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "b.txt"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { maxFilesVisited: 1 },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.summary.filesVisited).toBe(1);
+    expect(result.summary.truncated).toBe(true);
+    expect(result.summary.truncatedReason).toBe("max_files_visited");
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "max_files_visited", details: { maxFilesVisited: 1 } })]),
+    );
+  });
+
+  test("skips lines that exceed maxLineChars", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "long-line.txt"), `${"A".repeat(20)}RepositoryMap\nRepositoryMap\n`, "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { maxLineChars: 16 },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([expect.objectContaining({ file: "long-line.txt", line: 2 })]);
+    expect(result.summary.truncated).toBe(true);
+    expect(result.summary.truncatedReason).toBe("max_line_chars_exceeded");
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "max_line_chars_exceeded", file: "long-line.txt", line: 1, skipped: true })]),
+    );
+  });
+
+  test("stops traversal at maxDirectoriesVisited", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "a"), { recursive: true });
+    await fs.mkdir(path.join(root, "b"), { recursive: true });
+    await fs.writeFile(path.join(root, "a", "a.txt"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "b", "b.txt"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { maxDirectoriesVisited: 1 },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([]);
+    expect(result.summary.truncated).toBe(true);
+    expect(result.summary.truncatedReason).toBe("max_directories_visited");
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "max_directories_visited", details: { maxDirectoriesVisited: 1 } })]),
+    );
+  });
 });

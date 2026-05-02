@@ -21,6 +21,9 @@ describe("miku-grep request validation", () => {
       "recursive",
       "maxDepth",
       "maxFileBytes",
+      "maxLineChars",
+      "maxFilesVisited",
+      "maxDirectoriesVisited",
       "includeFileNamePatterns",
       "excludeFileNamePatterns",
       "excludeDirNamePatterns",
@@ -38,6 +41,9 @@ describe("miku-grep request validation", () => {
       recursive: true,
       maxDepth: 20,
       maxFileBytes: 10485760,
+      maxLineChars: 1000000,
+      maxFilesVisited: 100000,
+      maxDirectoriesVisited: 10000,
       includeFileNamePatterns: [],
     });
     expect(result.effectiveRequest.search.excludeFileNamePatterns).toEqual(
@@ -148,12 +154,42 @@ describe("miku-grep request validation", () => {
     expect(tooManyMatches.error?.code).toBe("max_matches_too_large");
   });
 
+  test("rejects oversized and nested quantified regex patterns", async () => {
+    const root = await fixture();
+    const tooLarge = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "a".repeat(1001) },
+    });
+    const unsafe = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "^(a+)+$" },
+    });
+    const charClassPlus = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "^([a+])+$" },
+    });
+
+    expect(tooLarge.ok).toBe(false);
+    expect(tooLarge.error?.code).toBe("regex_too_large");
+    expect(unsafe.ok).toBe(false);
+    expect(unsafe.error?.code).toBe("unsafe_regex");
+    expect(charClassPlus.ok).toBe(true);
+  });
+
   test.each([
     ["invalid_version", (root: string) => ({ ...baseRequest(root), version: 2 })],
     ["invalid_query_type", (root: string) => ({ ...baseRequest(root), query: { type: "glob", text: "RepositoryMap" } })],
     ["invalid_search_target", (root: string) => ({ ...baseRequest(root), search: { target: "path" } })],
     ["invalid_output_mode", (root: string) => ({ ...baseRequest(root), output: { mode: "raw" } })],
+    ["regex_too_large", (root: string) => ({ ...baseRequest(root), query: { type: "regex", text: "a".repeat(1001) } })],
+    ["unsafe_regex", (root: string) => ({ ...baseRequest(root), query: { type: "regex", text: "^(a+)+$" } })],
     ["max_depth_too_large", (root: string) => ({ ...baseRequest(root), search: { maxDepth: 51 } })],
+    ["max_line_chars_too_large", (root: string) => ({ ...baseRequest(root), search: { maxLineChars: 10000001 } })],
+    ["max_files_visited_too_large", (root: string) => ({ ...baseRequest(root), search: { maxFilesVisited: 1000001 } })],
+    ["max_directories_visited_too_large", (root: string) => ({ ...baseRequest(root), search: { maxDirectoriesVisited: 100001 } })],
     ["max_line_length_too_large", (root: string) => ({ ...baseRequest(root), output: { maxLineLength: 4001 } })],
     ["max_snippets_per_file_too_large", (root: string) => ({ ...baseRequest(root), output: { maxSnippetsPerFile: 101 } })],
     ["max_file_bytes_too_large", (root: string) => ({ ...baseRequest(root), search: { maxFileBytes: 104857601 } })],

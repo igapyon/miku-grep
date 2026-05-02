@@ -17,5 +17,6 @@ export type SearchState = {
   diagnostics: Diagnostic[];
   truncationDiagnosticKeys: Set<string>;
   summary: Summary;
+  directoriesVisited: number;
   globalLimitReached: boolean;
 };

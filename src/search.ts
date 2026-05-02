@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import iconv from "iconv-lite";
 import { globMatch, matchesAny, pathGlobMatch } from "./glob.js";
+import { isPathInsideOrSame } from "./path-security.js";
 import { createSummary } from "./result.js";
 import type { SearchResult, SearchState } from "./internal-types.js";
 import type {
@@ -23,6 +24,7 @@ export async function runSearch(request: EffectiveRequest, rootPath: string, dia
     diagnostics,
     truncationDiagnosticKeys: new Set(),
     summary: createSummary(),
+    directoriesVisited: 0,
     globalLimitReached: false,
   };
 
@@ -35,9 +37,19 @@ export async function runSearch(request: EffectiveRequest, rootPath: string, dia
 
 async function traverse(state: SearchState, absoluteDir: string, relativeDir: string, depth: number): Promise<void> {
   if (state.globalLimitReached) return;
+  if (state.directoriesVisited >= state.request.search.maxDirectoriesVisited) {
+    markTruncated(state, "max_directories_visited", "search stopped because maxDirectoriesVisited was reached", { maxDirectoriesVisited: state.request.search.maxDirectoriesVisited });
+    state.globalLimitReached = true;
+    return;
+  }
+  state.directoriesVisited += 1;
+
+  const safeDir = await resolveInsideRoot(state, absoluteDir, relativeDir || ".");
+  if (!safeDir) return;
+
   let entries;
   try {
-    entries = await fs.readdir(absoluteDir, { withFileTypes: true });
+    entries = await fs.readdir(safeDir, { withFileTypes: true });
   } catch {
     state.diagnostics.push({ severity: "warning", code: "directory_not_readable", message: "directory could not be read and was skipped", path: relativeDir || ".", skipped: true });
     return;
@@ -46,7 +58,7 @@ async function traverse(state: SearchState, absoluteDir: string, relativeDir: st
   for (const entry of entries) {
     if (state.globalLimitReached) return;
     const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
-    const absolutePath = path.join(absoluteDir, entry.name);
+    const absolutePath = path.join(safeDir, entry.name);
     if (entry.isSymbolicLink()) {
       state.diagnostics.push({ severity: "info", code: "symlink_skipped", message: "symlink was skipped", path: relativePath, skipped: true });
       continue;
@@ -58,6 +70,11 @@ async function traverse(state: SearchState, absoluteDir: string, relativeDir: st
       continue;
     }
     if (!entry.isFile()) continue;
+    if (state.summary.filesVisited >= state.request.search.maxFilesVisited) {
+      markTruncated(state, "max_files_visited", "search stopped because maxFilesVisited was reached", { maxFilesVisited: state.request.search.maxFilesVisited });
+      state.globalLimitReached = true;
+      return;
+    }
     state.summary.filesVisited += 1;
     if (!candidateFile(state, entry.name)) continue;
     await searchFile(state, absolutePath, relativePath, entry.name);
@@ -82,9 +99,17 @@ async function searchFile(state: SearchState, absolutePath: string, relativePath
   }
   if (target !== "content" && target !== "both") return;
 
+  const safePath = await resolveInsideRoot(state, absolutePath, relativePath);
+  if (!safePath) return;
+
   let stat;
   try {
-    stat = await fs.stat(absolutePath);
+    const lstat = await fs.lstat(safePath);
+    if (lstat.isSymbolicLink()) {
+      state.diagnostics.push({ severity: "info", code: "symlink_skipped", message: "symlink was skipped", path: relativePath, skipped: true });
+      return;
+    }
+    stat = await fs.stat(safePath);
   } catch {
     state.diagnostics.push({ severity: "warning", code: "file_not_readable", message: "file could not be read and was skipped", file: relativePath, skipped: true });
     return;
@@ -95,7 +120,7 @@ async function searchFile(state: SearchState, absolutePath: string, relativePath
   }
   let bytes;
   try {
-    bytes = await fs.readFile(absolutePath);
+    bytes = await fs.readFile(safePath);
   } catch {
     state.diagnostics.push({ severity: "warning", code: "file_not_readable", message: "file could not be read and was skipped", file: relativePath, skipped: true });
     return;
@@ -119,12 +144,16 @@ async function searchFile(state: SearchState, absolutePath: string, relativePath
   const lines = splitLines(text);
   let fileHitCount = state.summariesByFile.get(relativePath)?.matchCount ?? 0;
   for (let index = 0; index < lines.length; index += 1) {
-    for (const match of findMatches(lines[index] ?? "", state.request.query)) {
+    const line = lines[index] ?? "";
+    if (line.length > state.request.search.maxLineChars) {
+      markLineSkipped(state, relativePath, index + 1, line.length);
+      continue;
+    }
+    for (const match of findMatches(line, state.request.query)) {
       if (fileHitCount >= state.request.output.maxMatchesPerFile) {
         markTruncated(state, "max_matches_per_file", "file search stopped because maxMatchesPerFile was reached", { file: relativePath, maxMatchesPerFile: state.request.output.maxMatchesPerFile });
         return;
       }
-      const line = lines[index] ?? "";
       const snippet = makeSnippet(line, match.index, match.text.length, state.request.output.maxLineLength);
       addHit(state, relativePath, {
         type: "content",
@@ -142,6 +171,37 @@ async function searchFile(state: SearchState, absolutePath: string, relativePath
       if (state.globalLimitReached) return;
     }
   }
+}
+
+function markLineSkipped(state: SearchState, file: string, line: number, lineChars: number): void {
+  if (!state.summary.truncated) {
+    state.summary.truncated = true;
+    state.summary.truncatedReason = "max_line_chars_exceeded";
+  }
+  state.diagnostics.push({
+    severity: "warning",
+    code: "max_line_chars_exceeded",
+    message: "line exceeded maxLineChars and was skipped",
+    file,
+    line,
+    skipped: true,
+    details: { lineChars, maxLineChars: state.request.search.maxLineChars },
+  });
+}
+
+async function resolveInsideRoot(state: SearchState, absolutePath: string, relativePath: string): Promise<string | null> {
+  let realPath;
+  try {
+    realPath = await fs.realpath(absolutePath);
+  } catch {
+    state.diagnostics.push({ severity: "warning", code: "file_not_readable", message: "path could not be resolved and was skipped", path: relativePath, skipped: true });
+    return null;
+  }
+  if (!isPathInsideOrSame(realPath, state.rootPath)) {
+    state.diagnostics.push({ severity: "warning", code: "path_escape_skipped", message: "path resolved outside root and was skipped", path: relativePath, skipped: true });
+    return null;
+  }
+  return realPath;
 }
 
 function addHit(state: SearchState, file: string, hit: DetailMatch): void {

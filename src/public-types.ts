@@ -15,6 +15,9 @@ export type MikuGrepRequest = {
     recursive?: boolean;
     maxDepth?: number;
     maxFileBytes?: number;
+    maxLineChars?: number;
+    maxFilesVisited?: number;
+    maxDirectoriesVisited?: number;
     includeFileNamePatterns?: string[];
     excludeFileNamePatterns?: string[];
     excludeDirNamePatterns?: string[];
@@ -55,6 +58,9 @@ export type EffectiveRequest = {
     recursive: boolean;
     maxDepth: number;
     maxFileBytes: number;
+    maxLineChars: number;
+    maxFilesVisited: number;
+    maxDirectoriesVisited: number;
     includeFileNamePatterns: string[];
     excludeFileNamePatterns: string[];
     excludeDirNamePatterns: string[];
