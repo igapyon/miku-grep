@@ -156,6 +156,10 @@
 - [x] README public path hygiene
   - 実装: README の CLI specification link を repository-relative path に修正。
 
+- [ ] npm publish
+  - 方針: 当面の配布は GitHub Release のみとし、npm publish は遠い未来の検討事項とする。
+  - 実施時の確認候補: package name / ownership、npm provenance、2FA、publish access、README の npm install 手順、release workflow。
+
 - [x] package dry-run
   - 確認: `npm_config_cache=.npm-cache npm pack --dry-run` で package contents を確認。
   - 補足: default npm cache は local environment の権限問題で失敗したため、workspace-local cache を指定して確認した。
