@@ -796,7 +796,16 @@ When `maxMatchesPerFile` is reached, search for that file stops, but traversal c
 
 ### detail
 
-`detail` returns one item per hit.
+`detail` returns one item per content hit for `content` targets.
+
+For `filepath` and `directory` targets, `detail` returns at most one item per matched path. If the query has multiple matches in the same path string, the returned item uses a representative `matchedText`.
+
+Representative path `matchedText` selection:
+
+```text
+1. first non-empty match
+2. first zero-length match when there is no non-empty match
+```
 
 Content hit:
 
@@ -1123,6 +1132,7 @@ directoriesIgnored
 
 matches
   Total hit count.
+  For filepath and directory targets, multiple query matches in the same path count as one representative hit.
   In detail mode this usually equals matches[] length.
   In summary mode this may differ from matches[] length.
 
