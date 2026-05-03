@@ -12,7 +12,7 @@ describe("miku-grep encoding and diagnostics", () => {
       version: 1,
       root,
       query: { type: "literal", text: "こんにちは" },
-      search: { target: "content", recursive: true },
+      search: { targets: ["content"], recursive: true },
       output: { mode: "detail" },
       encoding: {
         default: "utf-8",
@@ -39,13 +39,13 @@ describe("miku-grep encoding and diagnostics", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content", maxFileBytes: 1 },
+      search: { targets: ["content"], maxFileBytes: 1 },
     });
     const binarySkipped = await runRequest({
       version: 1,
       root,
       query: { type: "literal", text: "R" },
-      search: { target: "content" },
+      search: { targets: ["content"] },
     });
 
     expect(sizeLimited.ok).toBe(true);
@@ -68,7 +68,7 @@ describe("miku-grep encoding and diagnostics", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content" },
+      search: { targets: ["content"] },
     });
 
     expect(result.ok).toBe(true);
@@ -87,7 +87,7 @@ describe("miku-grep encoding and diagnostics", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content" },
+      search: { targets: ["content"] },
     });
 
     expect(result.ok).toBe(true);
@@ -107,7 +107,7 @@ describe("miku-grep encoding and diagnostics", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content" },
+      search: { targets: ["content"] },
     });
 
     expect(result.ok).toBe(true);
@@ -177,7 +177,7 @@ describe("miku-grep encoding and diagnostics", () => {
       version: 1,
       root,
       query: { type: "literal", text: "こんにちは" },
-      search: { target: "content", recursive: true },
+      search: { targets: ["content"], recursive: true },
       output: { mode: "detail" },
       encoding: {
         default: "utf-8",

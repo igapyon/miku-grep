@@ -16,14 +16,14 @@ MVP scope:
 - `--version`
 - stdin JSON request
 - stdout JSON result
-- `content` / `filename` / `both`
+- `filepath` / `directory` / `content`
 - `literal` / `regex`
 - glob-based include / exclude
 - recursive search with `maxDepth`
 - `utf-8` / `shift_jis`
 - encoding rules
 - diagnostics
-- `detail` / `file-summary`
+- `detail` / `summary`
 
 Out of scope for MVP:
 
@@ -124,7 +124,7 @@ Example:
     "text": "RepositoryMap"
   },
   "search": {
-    "target": "content",
+    "targets": ["content"],
     "recursive": true,
     "maxDepth": 8,
     "includeFileNamePatterns": ["*.java", "*.md"],
@@ -146,6 +146,11 @@ Example:
       }
     ],
     "onDecodeError": "skip"
+  },
+  "ignore": {
+    "mode": "auto",
+    "sources": [".gitignore", ".ignore", ".git/info/exclude"],
+    "useGlobalGitignore": false
   }
 }
 ```
@@ -225,20 +230,32 @@ A future Java CLI may use Java's regex engine. Cross-runtime regex behavior is n
 
 ### search
 
-`search.target` values:
+`search.targets` is a non-empty array. Allowed values:
 
 ```text
-content
-  search file contents
-
-filename
+filepath
   search request.root-relative file paths
 
-both
-  search both file paths and file contents
+directory
+  search request.root-relative directory paths
+
+content
+  search file contents
 ```
 
-`filename` mode searches the request.root-relative file path, not only the basename.
+Examples:
+
+```json
+{ "targets": ["content"] }
+{ "targets": ["filepath"] }
+{ "targets": ["directory"] }
+{ "targets": ["filepath", "directory"] }
+{ "targets": ["filepath", "content"] }
+```
+
+`filepath` searches the request.root-relative file path, not only the basename.
+
+`directory` searches request.root-relative directory paths. Directory contents are not read.
 
 ### recursive / maxDepth
 
@@ -478,6 +495,59 @@ MVP has a content-read size limit.
 
 Files larger than `search.maxFileBytes` are skipped for content search and reported in `diagnostics[]`.
 
+## Ignore Files
+
+MVP respects repository ignore files by default.
+
+```json
+{
+  "ignore": {
+    "mode": "auto",
+    "sources": [".gitignore", ".ignore", ".git/info/exclude"],
+    "useGlobalGitignore": false
+  }
+}
+```
+
+Field meanings:
+
+```text
+mode
+  auto | none
+  Default is auto.
+  auto reads configured ignore sources when they exist under request.root.
+  none disables ignore file handling.
+
+sources
+  Optional source selector.
+  Allowed values: .gitignore, .ignore, .git/info/exclude.
+  Default is [".gitignore", ".ignore", ".git/info/exclude"].
+
+useGlobalGitignore
+  MVP accepts only false.
+  Global gitignore is outside MVP because it makes results environment-dependent.
+```
+
+`.gitignore` and `.ignore` are applied per directory. A nested ignore file applies only to that directory and its descendants.
+
+`.git/info/exclude` is read only when `request.root/.git/info/exclude` exists. MVP does not auto-detect a parent Git root.
+
+Ignore file skips are combined with `excludeFileNamePatterns`, `excludeDirNamePatterns`, and default exclude presets using OR semantics. Setting `excludeFileNamePatterns: []` or `excludeDirNamePatterns: []` does not disable ignore files; use `ignore.mode: "none"` for that.
+
+MVP supports a subset of Git ignore patterns:
+
+```text
+blank lines and # comments
+foo
+foo/
+*.log
+build/*.tmp
+/build
+docs/**/*.tmp
+```
+
+MVP does not support negation / unignore (`!pattern`), escaped leading `#` or `!`, Git-compatible trailing-space escaping, character classes, or brace expansion. Unsupported patterns are skipped individually and reported as `unsupported_ignore_pattern`.
+
 ## Result JSON
 
 ### Output Defaults
@@ -486,11 +556,13 @@ When `output` is omitted or partially specified, MVP applies these defaults.
 
 ```json
 {
-  "mode": "file-summary",
+  "mode": "summary",
   "maxMatches": 200,
   "maxMatchesPerFile": 20,
   "maxLineLength": 240,
-  "maxSnippetsPerFile": 3
+  "maxSnippetsPerFile": 3,
+  "contextLinesBefore": 0,
+  "contextLinesAfter": 0
 }
 ```
 
@@ -498,7 +570,7 @@ Field meanings:
 
 ```text
 mode
-  Default is file-summary because agents usually need to narrow candidate files first.
+  Default is summary because agents usually need to narrow candidate files first.
 
 maxMatches
   Maximum total hit count.
@@ -513,15 +585,31 @@ maxLineLength
   Must not exceed 4000.
 
 maxSnippetsPerFile
-  Maximum number of representative snippets in file-summary mode.
+  Maximum number of representative snippets in summary mode.
   Must not exceed 100.
+
+contextLines
+  Detail mode only.
+  Shorthand for setting contextLinesBefore and contextLinesAfter to the same value.
+  Cannot be combined with contextLinesBefore or contextLinesAfter.
+  Must not exceed 20.
+
+contextLinesBefore
+  Detail mode only.
+  Number of lines to return before each content hit.
+  Must not exceed 20.
+
+contextLinesAfter
+  Detail mode only.
+  Number of lines to return after each content hit.
+  Must not exceed 20.
 ```
 
 Allowed `output.mode` values:
 
 ```text
 detail
-file-summary
+summary
 ```
 
 Any other `output.mode` is a validation error.
@@ -540,7 +628,7 @@ Successful result example:
       "text": "RepositoryMap"
     },
     "search": {
-      "target": "content",
+      "targets": ["content"],
       "recursive": true,
       "maxDepth": 8,
       "maxFileBytes": 10485760,
@@ -555,7 +643,10 @@ Successful result example:
       "mode": "detail",
       "maxMatches": 200,
       "maxMatchesPerFile": 20,
-      "maxLineLength": 240
+      "maxLineLength": 240,
+      "maxSnippetsPerFile": 3,
+      "contextLinesBefore": 0,
+      "contextLinesAfter": 0
     },
     "encoding": {
       "default": "utf-8",
@@ -566,6 +657,12 @@ Successful result example:
         }
       ],
       "onDecodeError": "skip"
+    },
+    "ignore": {
+      "mode": "auto",
+      "sources": [".gitignore", ".ignore", ".git/info/exclude"],
+      "useGlobalGitignore": false,
+      "loadedSources": []
     }
   },
   "matches": [
@@ -584,8 +681,13 @@ Successful result example:
   ],
   "summary": {
     "filesVisited": 140,
+    "directoriesVisited": 12,
     "filesScanned": 120,
+    "directoriesScanned": 0,
     "filesMatched": 3,
+    "directoriesMatched": 0,
+    "filesIgnored": 0,
+    "directoriesIgnored": 0,
     "matches": 8,
     "diagnostics": 0,
     "truncated": false,
@@ -612,7 +714,7 @@ Expected failure example:
       "text": "RepositoryMap"
     },
     "search": {
-      "target": "content",
+      "targets": ["content"],
       "recursive": true,
       "maxDepth": 8,
       "maxFileBytes": 10485760,
@@ -630,13 +732,24 @@ Expected failure example:
       "default": "utf-8",
       "rules": [],
       "onDecodeError": "skip"
+    },
+    "ignore": {
+      "mode": "auto",
+      "sources": [".gitignore", ".ignore", ".git/info/exclude"],
+      "useGlobalGitignore": false,
+      "loadedSources": []
     }
   },
   "matches": [],
   "summary": {
     "filesVisited": 0,
+    "directoriesVisited": 0,
     "filesScanned": 0,
+    "directoriesScanned": 0,
     "filesMatched": 0,
+    "directoriesMatched": 0,
+    "filesIgnored": 0,
+    "directoriesIgnored": 0,
     "matches": 0,
     "diagnostics": 1,
     "truncated": false,
@@ -708,26 +821,74 @@ Content hit:
 
 When `text` is shortened, include `textStartColumn` if the snippet does not start at column 1.
 
-Filename hit:
+Content hit with context:
 
 ```json
 {
-  "type": "filename",
+  "type": "content",
+  "file": "src/main/java/example/App.java",
+  "line": 42,
+  "column": 7,
+  "matchedText": "RepositoryMap",
+  "text": "class RepositoryMap {",
+  "trimmed": false,
+  "contextBefore": [
+    {
+      "line": 41,
+      "text": "public class App {",
+      "trimmed": false
+    }
+  ],
+  "contextAfter": [
+    {
+      "line": 43,
+      "text": "}",
+      "trimmed": false
+    }
+  ],
+  "encoding": "shift_jis",
+  "encodingRule": {
+    "type": "fileNamePattern",
+    "pattern": "*.java"
+  }
+}
+```
+
+`contextBefore` and `contextAfter` are returned only for content hits in detail mode when context lines are requested.
+Context line text uses `output.maxLineLength`.
+If a context line exceeds `search.maxLineChars`, that line is omitted and reported in `diagnostics[]`.
+Context lines do not count toward `summary.matches`, `output.maxMatches`, or `output.maxMatchesPerFile`.
+
+Filepath hit:
+
+```json
+{
+  "type": "filepath",
   "file": "src/main/java/example/RepositoryMap.java",
   "matchedText": "src/main/java/example/RepositoryMap.java"
 }
 ```
 
-### file-summary
+Directory hit:
 
-`file-summary` returns one item per matched file.
+```json
+{
+  "type": "directory",
+  "path": "src/main/java",
+  "matchedText": "java"
+}
+```
+
+### summary
+
+`summary` returns one item per matched file or matched directory.
 
 ```json
 {
   "type": "file",
   "file": "src/main/java/example/RepositoryMap.java",
-  "matchTypes": ["filename", "content"],
-  "filenameMatched": true,
+  "matchTypes": ["filepath", "content"],
+  "filepathMatched": true,
   "contentMatched": true,
   "lines": [42, 84, 120],
   "matchCount": 3,
@@ -747,18 +908,35 @@ Filename hit:
 }
 ```
 
-Filename match and content match are identified by `type`. Do not add `matchType`.
+Directory summary item:
+
+```json
+{
+  "type": "directory",
+  "path": "src/main/java",
+  "matchTypes": ["directory"],
+  "directoryMatched": true,
+  "matchCount": 1
+}
+```
+
+Filepath match, directory match, and content match are identified by `type`. Do not add `matchType`.
 
 ```text
 detail mode
-  type: "filename"
+  type: "filepath"
+  type: "directory"
   type: "content"
 
-file-summary mode
+summary mode
   type: "file"
-  matchTypes: ["filename", "content"]
-  filenameMatched: true | false
+  matchTypes: ["filepath", "content"]
+  filepathMatched: true | false
   contentMatched: true | false
+
+  type: "directory"
+  matchTypes: ["directory"]
+  directoryMatched: true
 ```
 
 ## Diagnostics
@@ -869,6 +1047,12 @@ decode_error
 path_escape_skipped
   path resolved outside request.root realpath and was skipped
 
+ignore_file_not_readable
+  ignore file exists but could not be read
+
+unsupported_ignore_pattern
+  ignore pattern is outside the MVP subset and was skipped
+
 max_matches
   search stopped because output.maxMatches was reached
 
@@ -876,7 +1060,7 @@ max_matches_per_file
   search for a file stopped because output.maxMatchesPerFile was reached
 
 max_snippets_per_file
-  file-summary snippets were omitted because output.maxSnippetsPerFile was reached
+  summary snippets were omitted because output.maxSnippetsPerFile was reached
 
 max_files_visited
   search stopped because search.maxFilesVisited was reached
@@ -892,8 +1076,13 @@ max_directories_visited
 ```json
 {
   "filesVisited": 140,
+  "directoriesVisited": 20,
   "filesScanned": 98,
+  "directoriesScanned": 18,
   "filesMatched": 3,
+  "directoriesMatched": 2,
+  "filesIgnored": 4,
+  "directoriesIgnored": 1,
   "matches": 8,
   "diagnostics": 2,
   "truncated": false,
@@ -910,15 +1099,32 @@ filesVisited
 filesScanned
   Number of files actually processed for search.
   For content search, this means files decoded and searched.
-  For filename search, this means files checked by file path matching.
+  For filepath search, this means files checked by file path matching.
+
+directoriesVisited
+  Number of directories discovered by traversal, including the root directory.
+
+directoriesScanned
+  Number of directories checked by directory path matching.
 
 filesMatched
   Number of files with at least one hit.
 
+directoriesMatched
+  Number of directories with at least one hit.
+
+filesIgnored
+  Number of files skipped by ignore file patterns.
+  Does not include default exclude preset or explicit exclude pattern skips.
+
+directoriesIgnored
+  Number of directories skipped by ignore file patterns.
+  Does not include default exclude preset or explicit exclude pattern skips.
+
 matches
   Total hit count.
   In detail mode this usually equals matches[] length.
-  In file-summary mode this may differ from matches[] length.
+  In summary mode this may differ from matches[] length.
 
 diagnostics
   diagnostics[] item count.
@@ -965,8 +1171,15 @@ invalid_request
 unknown_field
 invalid_version
 invalid_query_type
+invalid_search_targets
 invalid_search_target
+duplicate_search_target
 invalid_output_mode
+invalid_context_lines
+invalid_ignore_mode
+invalid_ignore_sources
+invalid_ignore_source
+invalid_ignore_global
 invalid_regex
 regex_too_large
 unsafe_regex
@@ -982,6 +1195,7 @@ max_files_visited_too_large
 max_directories_visited_too_large
 max_line_length_too_large
 max_snippets_per_file_too_large
+context_lines_too_large
 max_file_bytes_too_large
 invalid_encoding
 invalid_encoding_rule
@@ -997,7 +1211,7 @@ All path and diagnostic-code string ordering uses deterministic UTF-16 code unit
 
 Content hits are sorted by line ascending within each file.
 
-When `search.target: "both"` produces both filename and content hits for the same file in `detail` mode, filename hits should appear before content hits for that file.
+When `search.targets` produces both filepath and content hits for the same file in `detail` mode, filepath hits should appear before content hits for that file. Directory hits are sorted with other matches by path.
 
 Diagnostics should be emitted in stable order where practical. Prefer path / file ascending, then line ascending when present, then code ascending.
 

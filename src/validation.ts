@@ -1,7 +1,7 @@
 import type { ValidationResult } from "./internal-types.js";
 import { hasNestedQuantifiedGroup } from "./regex-safety.js";
 import { DEFAULT_EXCLUDE_DIRS, DEFAULT_EXCLUDE_FILES, DEFAULTS, LIMITS, REQUEST_SHAPE, VERSION } from "./request-contract.js";
-import type { EffectiveRequest, EncodingRuleInput, QueryType, SupportedEncoding } from "./public-types.js";
+import type { EffectiveRequest, EncodingRuleInput, IgnoreSource, QueryType, SearchTarget, SupportedEncoding } from "./public-types.js";
 
 export { VERSION } from "./request-contract.js";
 
@@ -28,14 +28,15 @@ export function validateAndNormalize(request: unknown): ValidationResult {
   const searchInput = request.search ?? {};
   const outputInput = request.output ?? {};
   const encodingInput = request.encoding ?? {};
-  if (!isPlainObject(searchInput) || !isPlainObject(outputInput) || !isPlainObject(encodingInput)) {
-    return invalid("invalid_request", "search, output, and encoding must be objects when specified");
+  const ignoreInput = request.ignore ?? {};
+  if (!isPlainObject(searchInput) || !isPlainObject(outputInput) || !isPlainObject(encodingInput) || !isPlainObject(ignoreInput)) {
+    return invalid("invalid_request", "search, output, encoding, and ignore must be objects when specified");
   }
 
   const hasExcludeFileNamePatterns = hasOwn(searchInput, "excludeFileNamePatterns");
   const hasExcludeDirNamePatterns = hasOwn(searchInput, "excludeDirNamePatterns");
   const search = {
-    target: typeof searchInput.target === "string" ? searchInput.target : DEFAULTS.search.target,
+    targets: searchInput.targets ?? DEFAULTS.search.targets,
     recursive: searchInput.recursive ?? DEFAULTS.search.recursive,
     maxDepth: searchInput.maxDepth ?? DEFAULTS.search.maxDepth,
     maxFileBytes: searchInput.maxFileBytes ?? DEFAULTS.search.maxFileBytes,
@@ -46,7 +47,11 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     excludeFileNamePatterns: hasExcludeFileNamePatterns ? searchInput.excludeFileNamePatterns : DEFAULT_EXCLUDE_FILES,
     excludeDirNamePatterns: hasExcludeDirNamePatterns ? searchInput.excludeDirNamePatterns : DEFAULT_EXCLUDE_DIRS,
   };
-  if (!["content", "filename", "both"].includes(search.target)) return invalid("invalid_search_target", "search.target must be content, filename, or both");
+  if (!isStringArray(search.targets) || search.targets.length === 0) return invalid("invalid_search_targets", "search.targets must be a non-empty array of filepath, directory, or content");
+  for (const target of search.targets) {
+    if (!isSearchTarget(target)) return invalid("invalid_search_target", "search.targets[] must be filepath, directory, or content");
+  }
+  if (new Set(search.targets).size !== search.targets.length) return invalid("duplicate_search_target", "search.targets must not contain duplicate values");
   if (typeof search.recursive !== "boolean") return invalid("invalid_request", "search.recursive must be boolean");
   for (const check of [
     validateIntegerLimit(search.maxDepth, "search.maxDepth", 0, LIMITS.maxDepth, "max_depth_too_large"),
@@ -67,8 +72,21 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     maxMatchesPerFile: outputInput.maxMatchesPerFile ?? DEFAULTS.output.maxMatchesPerFile,
     maxLineLength: outputInput.maxLineLength ?? DEFAULTS.output.maxLineLength,
     maxSnippetsPerFile: outputInput.maxSnippetsPerFile ?? DEFAULTS.output.maxSnippetsPerFile,
+    contextLines: outputInput.contextLines,
+    contextLinesBefore: outputInput.contextLinesBefore,
+    contextLinesAfter: outputInput.contextLinesAfter,
   };
-  if (!["detail", "file-summary"].includes(output.mode)) return invalid("invalid_output_mode", "output.mode must be detail or file-summary");
+  if (!["detail", "summary"].includes(output.mode)) return invalid("invalid_output_mode", "output.mode must be detail or summary");
+  const hasContextLines = hasOwn(outputInput, "contextLines");
+  const hasContextLinesBefore = hasOwn(outputInput, "contextLinesBefore");
+  const hasContextLinesAfter = hasOwn(outputInput, "contextLinesAfter");
+  const hasAnyContextOption = hasContextLines || hasContextLinesBefore || hasContextLinesAfter;
+  if (output.mode === "summary" && hasAnyContextOption) return invalid("invalid_context_lines", "context lines are only supported in detail mode");
+  if (hasContextLines && (hasContextLinesBefore || hasContextLinesAfter)) {
+    return invalid("invalid_context_lines", "output.contextLines cannot be combined with contextLinesBefore or contextLinesAfter");
+  }
+  const contextLinesBefore = hasContextLines ? output.contextLines : output.contextLinesBefore ?? DEFAULTS.output.contextLinesBefore;
+  const contextLinesAfter = hasContextLines ? output.contextLines : output.contextLinesAfter ?? DEFAULTS.output.contextLinesAfter;
   for (const [field, code] of [
     ["maxMatches", "max_matches_too_large"],
     ["maxMatchesPerFile", "max_matches_per_file_too_large"],
@@ -77,6 +95,16 @@ export function validateAndNormalize(request: unknown): ValidationResult {
   ] as const) {
     const check = validateIntegerLimit(output[field], `output.${field}`, 1, LIMITS[field], code);
     if (check) return check;
+  }
+  for (const [value, fieldPath] of [
+    [contextLinesBefore, hasContextLines ? "output.contextLines" : "output.contextLinesBefore"],
+    [contextLinesAfter, hasContextLines ? "output.contextLines" : "output.contextLinesAfter"],
+  ] as const) {
+    const check = validateIntegerLimit(value, fieldPath, 0, LIMITS.contextLines, "context_lines_too_large");
+    if (check) {
+      if (!check.ok && check.code === "invalid_request") return invalid("invalid_context_lines", `${fieldPath} must be a non-negative integer`);
+      return check;
+    }
   }
 
   const encoding = {
@@ -101,16 +129,36 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     if (ruleUnknown) return invalid("unknown_field", `unknown field: encoding.rules[].${ruleUnknown}`);
   }
 
+  const ignore = {
+    mode: typeof ignoreInput.mode === "string" ? ignoreInput.mode : DEFAULTS.ignore.mode,
+    sources: ignoreInput.sources ?? DEFAULTS.ignore.sources,
+    useGlobalGitignore: ignoreInput.useGlobalGitignore ?? DEFAULTS.ignore.useGlobalGitignore,
+  };
+  if (!["auto", "none"].includes(ignore.mode)) return invalid("invalid_ignore_mode", "ignore.mode must be auto or none");
+  if (ignore.mode === "none" && (hasOwn(ignoreInput, "sources") || hasOwn(ignoreInput, "useGlobalGitignore"))) {
+    return invalid("invalid_ignore_sources", "ignore.sources and ignore.useGlobalGitignore cannot be specified when ignore.mode is none");
+  }
+  if (!isStringArray(ignore.sources)) return invalid("invalid_ignore_sources", "ignore.sources must be an array of strings");
+  for (const source of ignore.sources) {
+    if (!isIgnoreSource(source)) return invalid("invalid_ignore_source", "ignore.sources[] must be .gitignore, .ignore, or .git/info/exclude");
+  }
+  if (new Set(ignore.sources).size !== ignore.sources.length) return invalid("invalid_ignore_sources", "ignore.sources must not contain duplicate values");
+  if (typeof ignore.useGlobalGitignore !== "boolean" || ignore.useGlobalGitignore) {
+    return invalid("invalid_ignore_global", "ignore.useGlobalGitignore must be false");
+  }
+
   const includeFileNamePatterns = search.includeFileNamePatterns as string[];
   const excludeFileNamePatterns = search.excludeFileNamePatterns as string[];
   const excludeDirNamePatterns = search.excludeDirNamePatterns as string[];
+  const targets = search.targets as SearchTarget[];
   const encodingRules = encoding.rules as EncodingRuleInput[];
+  const ignoreSources = ignore.mode === "none" ? [] : (ignore.sources as IgnoreSource[]);
 
   const effectiveRequest: EffectiveRequest = {
     root: request.root,
     query: { type: request.query.type as QueryType, text: request.query.text },
     search: {
-      target: search.target as EffectiveRequest["search"]["target"],
+      targets,
       recursive: search.recursive as boolean,
       maxDepth: search.recursive ? (search.maxDepth as number) : 0,
       maxFileBytes: search.maxFileBytes as number,
@@ -127,11 +175,19 @@ export function validateAndNormalize(request: unknown): ValidationResult {
       maxMatchesPerFile: output.maxMatchesPerFile as number,
       maxLineLength: output.maxLineLength as number,
       maxSnippetsPerFile: output.maxSnippetsPerFile as number,
+      contextLinesBefore: contextLinesBefore as number,
+      contextLinesAfter: contextLinesAfter as number,
     },
     encoding: {
       default: encoding.default,
       rules: encodingRules,
       onDecodeError: "skip",
+    },
+    ignore: {
+      mode: ignore.mode as EffectiveRequest["ignore"]["mode"],
+      sources: ignoreSources,
+      useGlobalGitignore: false,
+      loadedSources: [],
     },
   };
   return { ok: true, effectiveRequest };
@@ -176,6 +232,14 @@ function isSafeInteger(value: unknown): value is number {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isSearchTarget(value: string): value is SearchTarget {
+  return value === "filepath" || value === "directory" || value === "content";
+}
+
+function isIgnoreSource(value: string): value is IgnoreSource {
+  return value === ".gitignore" || value === ".ignore" || value === ".git/info/exclude";
 }
 
 function isSupportedEncoding(value: unknown): value is SupportedEncoding {

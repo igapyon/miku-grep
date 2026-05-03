@@ -17,7 +17,7 @@ describe("miku-grep CLI meta and stdio contract", () => {
     expect(text).toContain("Possible validation error output");
     expect(text).toContain("COMMON DIAGNOSTIC CODES");
     expect(text).toContain('"version": 1');
-    expect(text).toContain("search.target");
+    expect(text).toContain("search.targets");
     expect(text).toContain("output.mode");
     expect(text).toContain("encoding.rules");
   });
@@ -43,7 +43,7 @@ describe("miku-grep CLI meta and stdio contract", () => {
         version: 1,
         root,
         query: { type: "literal", text: "RepositoryMap" },
-        search: { target: "filename" },
+        search: { targets: ["filepath"] },
       }),
       stdout.stream,
       stderr.stream,
@@ -96,7 +96,7 @@ describe("miku-grep CLI meta and stdio contract", () => {
         version: 1,
         root,
         query: { type: "literal", text: "RepositoryMap" },
-        search: { target: "filename" },
+        search: { targets: ["filepath"] },
       })}\n`,
       encoding: "utf8",
     });

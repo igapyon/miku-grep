@@ -38,11 +38,12 @@ export const LIMITS = {
   maxMatchesPerFile: 1000,
   maxLineLength: 4000,
   maxSnippetsPerFile: 100,
+  contextLines: 20,
 };
 
 export const DEFAULTS = {
   search: {
-    target: "content",
+    targets: ["content"],
     recursive: true,
     maxDepth: 20,
     maxFileBytes: 10485760,
@@ -54,16 +55,24 @@ export const DEFAULTS = {
     excludeDirNamePatterns: [] as string[],
   },
   output: {
-    mode: "file-summary",
+    mode: "summary",
     maxMatches: 200,
     maxMatchesPerFile: 20,
     maxLineLength: 240,
     maxSnippetsPerFile: 3,
+    contextLinesBefore: 0,
+    contextLinesAfter: 0,
   },
   encoding: {
     default: "utf-8",
     rules: [],
     onDecodeError: "skip",
+  },
+  ignore: {
+    mode: "auto",
+    sources: [".gitignore", ".ignore", ".git/info/exclude"],
+    useGlobalGitignore: false,
+    loadedSources: [],
   },
 } as const;
 
@@ -72,7 +81,7 @@ export const REQUEST_SHAPE = {
   root: true,
   query: { type: true, text: true },
   search: {
-    target: true,
+    targets: true,
     recursive: true,
     maxDepth: true,
     maxFileBytes: true,
@@ -83,6 +92,16 @@ export const REQUEST_SHAPE = {
     excludeFileNamePatterns: true,
     excludeDirNamePatterns: true,
   },
-  output: { mode: true, maxMatches: true, maxMatchesPerFile: true, maxLineLength: true, maxSnippetsPerFile: true },
+  output: {
+    mode: true,
+    maxMatches: true,
+    maxMatchesPerFile: true,
+    maxLineLength: true,
+    maxSnippetsPerFile: true,
+    contextLines: true,
+    contextLinesBefore: true,
+    contextLinesAfter: true,
+  },
   encoding: { default: true, rules: true, onDecodeError: true },
+  ignore: { mode: true, sources: true, useGlobalGitignore: true },
 } satisfies Record<string, true | Record<string, unknown>>;

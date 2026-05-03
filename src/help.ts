@@ -25,7 +25,7 @@ MINIMAL REQUEST
     "version": 1,
     "root": ".",
     "query": { "type": "literal", "text": "RepositoryMap" },
-    "search": { "target": "content", "recursive": true, "maxDepth": 8 }
+    "search": { "targets": ["content"], "recursive": true, "maxDepth": 8 }
   }
 
 REQUEST FIELDS
@@ -41,11 +41,12 @@ REQUEST FIELDS
   query.text
     Non-empty search text or regex pattern.
 
-  search.target
+  search.targets
+    Non-empty array of "filepath", "directory", and/or "content".
+    "filepath" searches root-relative file paths.
+    "directory" searches root-relative directory paths.
     "content" searches file contents.
-    "filename" searches root-relative file paths.
-    "both" searches filename first, then content.
-    Default: "content".
+    Default: ["content"].
 
   search.recursive
     boolean. Default: true.
@@ -80,7 +81,7 @@ REQUEST FIELDS
     When specified, this value replaces default excludes.
 
   output.mode
-    "file-summary" or "detail". Default: "file-summary".
+    "summary" or "detail". Default: "summary".
 
   output.maxMatches
     Default: 200. Maximum: 10000.
@@ -93,7 +94,15 @@ REQUEST FIELDS
     Snippets contain only source text. Artificial "..." is not added.
 
   output.maxSnippetsPerFile
-    file-summary representative snippet limit. Default: 3. Maximum: 100.
+    summary representative snippet limit. Default: 3. Maximum: 100.
+
+  output.contextLines
+    detail mode only. Shorthand for contextLinesBefore and contextLinesAfter.
+    Default: 0. Maximum: 20.
+
+  output.contextLinesBefore / output.contextLinesAfter
+    detail mode only. Context lines around content hits.
+    Default: 0. Maximum: 20.
 
   encoding.default
     "utf-8" or "shift_jis". Default: "utf-8".
@@ -105,6 +114,18 @@ REQUEST FIELDS
 
   encoding.onDecodeError
     "skip". Decode failures are reported in diagnostics.
+
+  ignore.mode
+    "auto" or "none". Default: "auto".
+    "auto" respects .gitignore, .ignore, and .git/info/exclude under root.
+    "none" disables ignore file handling.
+
+  ignore.sources
+    Optional source selector. Allowed values: ".gitignore", ".ignore", ".git/info/exclude".
+    Default: [".gitignore", ".ignore", ".git/info/exclude"].
+
+  ignore.useGlobalGitignore
+    false. Global gitignore is outside MVP.
 
 DEFAULT EXCLUDES
   Directory names:
@@ -121,8 +142,13 @@ RESULT SHAPE
     "matches": [],
     "summary": {
       "filesVisited": 0,
+      "directoriesVisited": 0,
       "filesScanned": 0,
+      "directoriesScanned": 0,
       "filesMatched": 0,
+      "directoriesMatched": 0,
+      "filesIgnored": 0,
+      "directoriesIgnored": 0,
       "matches": 0,
       "diagnostics": 0,
       "truncated": false,
@@ -138,12 +164,12 @@ FULL STDIN / STDOUT EXAMPLE
       "root": ".",
       "query": { "type": "literal", "text": "RepositoryMap" },
       "search": {
-        "target": "content",
+        "targets": ["content"],
         "recursive": true,
         "maxDepth": 8,
         "includeFileNamePatterns": ["*.java", "*.md"]
       },
-      "output": { "mode": "file-summary", "maxMatches": 20 }
+      "output": { "mode": "summary", "maxMatches": 20 }
     }
 
   Possible successful output:
@@ -155,7 +181,7 @@ FULL STDIN / STDOUT EXAMPLE
         "root": ".",
         "query": { "type": "literal", "text": "RepositoryMap" },
         "search": {
-          "target": "content",
+          "targets": ["content"],
           "recursive": true,
           "maxDepth": 8,
           "maxFileBytes": 10485760,
@@ -163,15 +189,16 @@ FULL STDIN / STDOUT EXAMPLE
           "excludeFileNamePatterns": ["*.class", "*.jar", "*.zip", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.pdf", ".classpath", ".project"],
           "excludeDirNamePatterns": [".git", ".svn", "node_modules", "target", "build", "dist", ".gradle", ".idea", ".vscode", ".settings", "vendor"]
         },
-        "output": { "mode": "file-summary", "maxMatches": 20, "maxMatchesPerFile": 20, "maxLineLength": 240, "maxSnippetsPerFile": 3 },
-        "encoding": { "default": "utf-8", "rules": [], "onDecodeError": "skip" }
+        "output": { "mode": "summary", "maxMatches": 20, "maxMatchesPerFile": 20, "maxLineLength": 240, "maxSnippetsPerFile": 3, "contextLinesBefore": 0, "contextLinesAfter": 0 },
+        "encoding": { "default": "utf-8", "rules": [], "onDecodeError": "skip" },
+        "ignore": { "mode": "auto", "sources": [".gitignore", ".ignore", ".git/info/exclude"], "useGlobalGitignore": false, "loadedSources": [] }
       },
       "matches": [
         {
           "type": "file",
           "file": "src/RepositoryMap.java",
           "matchTypes": ["content"],
-          "filenameMatched": false,
+          "filepathMatched": false,
           "contentMatched": true,
           "lines": [42],
           "matchCount": 1,
@@ -182,7 +209,7 @@ FULL STDIN / STDOUT EXAMPLE
           "encodingRule": { "type": "default" }
         }
       ],
-      "summary": { "filesVisited": 12, "filesScanned": 10, "filesMatched": 1, "matches": 1, "diagnostics": 0, "truncated": false, "truncatedReason": null },
+      "summary": { "filesVisited": 12, "directoriesVisited": 3, "filesScanned": 10, "directoriesScanned": 0, "filesMatched": 1, "directoriesMatched": 0, "filesIgnored": 0, "directoriesIgnored": 0, "matches": 1, "diagnostics": 0, "truncated": false, "truncatedReason": null },
       "diagnostics": []
     }
 
@@ -193,7 +220,7 @@ FULL STDIN / STDOUT EXAMPLE
       "error": { "code": "empty_query", "message": "query.text must not be empty" },
       "effectiveRequest": {},
       "matches": [],
-      "summary": { "filesVisited": 0, "filesScanned": 0, "filesMatched": 0, "matches": 0, "diagnostics": 1, "truncated": false, "truncatedReason": null },
+      "summary": { "filesVisited": 0, "directoriesVisited": 0, "filesScanned": 0, "directoriesScanned": 0, "filesMatched": 0, "directoriesMatched": 0, "filesIgnored": 0, "directoriesIgnored": 0, "matches": 0, "diagnostics": 1, "truncated": false, "truncatedReason": null },
       "diagnostics": [
         { "severity": "error", "code": "empty_query", "message": "query.text must not be empty" }
       ]
@@ -204,39 +231,55 @@ DETAIL MATCHES
     { "type": "content", "file": "src/App.java", "line": 42, "column": 7,
       "matchedText": "RepositoryMap", "text": "class RepositoryMap {",
       "trimmed": false, "encoding": "utf-8", "encodingRule": { "type": "default" } }
-  Filename hit:
-    { "type": "filename", "file": "src/RepositoryMap.java",
+  Content hit with context:
+    { "type": "content", "file": "src/App.java", "line": 42, "column": 7,
+      "matchedText": "RepositoryMap", "text": "class RepositoryMap {",
+      "trimmed": false,
+      "contextBefore": [{ "line": 41, "text": "", "trimmed": false }],
+      "contextAfter": [{ "line": 43, "text": "}", "trimmed": false }],
+      "encoding": "utf-8", "encodingRule": { "type": "default" } }
+  Filepath hit:
+    { "type": "filepath", "file": "src/RepositoryMap.java",
       "matchedText": "src/RepositoryMap.java" }
+  Directory hit:
+    { "type": "directory", "path": "src",
+      "matchedText": "src" }
 
-FILE-SUMMARY MATCHES
+SUMMARY MATCHES
   { "type": "file", "file": "src/RepositoryMap.java",
-    "matchTypes": ["filename", "content"],
-    "filenameMatched": true, "contentMatched": true,
+    "matchTypes": ["filepath", "content"],
+    "filepathMatched": true, "contentMatched": true,
     "lines": [42], "matchCount": 1, "snippets": [] }
+  { "type": "directory", "path": "src",
+    "matchTypes": ["directory"], "directoryMatched": true, "matchCount": 1 }
 
 COMMON DIAGNOSTIC CODES
   Validation / expected failures:
     invalid_request, unknown_field, invalid_version, invalid_query_type,
-    invalid_search_target, invalid_output_mode, invalid_regex,
+    invalid_search_targets, invalid_search_target, duplicate_search_target,
+    invalid_output_mode, invalid_context_lines, invalid_regex,
     regex_too_large, unsafe_regex,
+    invalid_ignore_mode, invalid_ignore_sources, invalid_ignore_source, invalid_ignore_global,
     root_not_found, root_not_accessible, root_too_broad, empty_query,
     max_matches_too_large, max_matches_per_file_too_large, max_depth_too_large,
     max_line_length_too_large, max_snippets_per_file_too_large,
+    context_lines_too_large,
     max_file_bytes_too_large, max_line_chars_too_large, max_files_visited_too_large,
     max_directories_visited_too_large, invalid_encoding, invalid_encoding_rule
   Runtime diagnostics:
     directory_not_readable, symlink_skipped, file_not_readable,
     max_file_bytes_exceeded, binary_file_skipped, decode_error,
+    ignore_file_not_readable, unsupported_ignore_pattern,
     path_escape_skipped, max_matches, max_matches_per_file,
     max_snippets_per_file, max_line_chars_exceeded,
     max_files_visited, max_directories_visited
 
 EXAMPLES
   Content search:
-    printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"TODO"},"search":{"target":"content"}}' | miku-grep
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"TODO"},"search":{"targets":["content"]}}' | miku-grep
 
-  Filename search:
-    printf '%s\\n' '{"version":1,"root":".","query":{"type":"regex","text":"Repository.*\\\\.java$"},"search":{"target":"filename"},"output":{"mode":"detail"}}' | miku-grep
+  Find-like path search:
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"regex","text":"Repository|docs"},"search":{"targets":["filepath","directory"]},"output":{"mode":"detail"}}' | miku-grep
 
 SEE ALSO
   docs/miku-grep-cli-spec.md

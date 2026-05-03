@@ -13,7 +13,7 @@ describe("miku-grep output limits", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      output: { mode: "file-summary", maxSnippetsPerFile: 1 },
+      output: { mode: "summary", maxSnippetsPerFile: 1 },
     });
 
     expect(result.ok).toBe(true);
