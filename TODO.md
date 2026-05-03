@@ -1,5 +1,49 @@
 # TODO
 
+## next specification candidates
+
+- [x] ディレクトリ検索機能を仕様検討・実装する
+  - 目的: `find` 代替として、file だけでなく directory entry も検索・返せるようにする。
+  - 実装: `search.targets` 配列で `filepath` / `directory` / `content` を組み合わせられるようにした。
+  - 実装: `targets: ["filepath", "directory"]` を `find` 代替として扱う。
+  - 実装: directory match は `type: "directory"` と `path` を返す。
+  - 実装: `output.mode` は `summary` / `detail` とし、`summary` は file / directory の両方を返せる。
+  - 実装: `summary` に `directoriesVisited` / `directoriesScanned` / `directoriesMatched` を追加。
+  - 確認: `npm test` が成功。
+  - 仕様: `docs/miku-grep-search-targets-spec.md`
+
+- [x] `.gitignore` / ignore file 尊重を仕様検討・実装する
+  - 優先度: 最優先候補。
+  - 目的: `.gitignore` などで無視される file / directory を検索対象から除外できるようにする。
+  - 実装: `ignore` request object を追加。
+  - 実装: `ignore.mode` は `auto` / `none` とし、default は `auto`。
+  - 実装: MVP source は `.gitignore`、`.ignore`、`.git/info/exclude`。
+  - 実装: global gitignore は MVP では扱わず、`useGlobalGitignore: true` は validation error。
+  - 実装: `ignore.sources` は許可 source の選択だけに使い、任意 path は受け取らない。
+  - 実装: ignore file による除外は既存 exclude と OR で適用。
+  - 実装: `summary.filesIgnored` / `summary.directoriesIgnored` を追加。
+  - 実装: `effectiveRequest.ignore.loadedSources` で実際に読めた source を返す。
+  - 実装: unreadable ignore file は `ignore_file_not_readable` warning diagnostic。
+  - 実装: unsupported pattern は該当 pattern だけ skip し、`unsupported_ignore_pattern` warning diagnostic。
+  - 確認: `npm test` が成功。
+  - 仕様: `docs/miku-grep-ignore-files-spec.md`
+
+- [x] match 前後 context lines を仕様検討する
+  - 優先度: 高め。`miku-grep` 本体の検索結果品質を上げる機能として対応したい。
+  - 目的: match 行だけでなく前後の text を返し、AI agent が検索結果だけで周辺文脈を判断しやすくする。
+  - 実装: `output.mode: "detail"` 限定で追加。
+  - 実装: `type: "content"` hit にだけ `contextBefore` / `contextAfter` を付ける。
+  - 実装: `output.mode: "summary"` で context option が指定された場合は validation error。
+  - 実装: `detail` mode で `search.targets` に `content` がなくても context option 指定は validation error にしない。
+  - 実装: request field は `output.contextLines`、または `output.contextLinesBefore` / `output.contextLinesAfter`。
+  - 実装: `contextLines` と before / after 個別指定の同時指定は validation error。
+  - 実装: default は `0`、最大値は `20`。
+  - 実装: validation code は `invalid_context_lines` / `context_lines_too_large`。
+  - 実装: context 行にも `output.maxLineLength` を適用する。
+  - 実装: context 行は `summary.matches` / `output.maxMatches` / `output.maxMatchesPerFile` に数えない。
+  - 実装: context option 未指定時は context field を返さず、指定時は空配列も返す。
+  - 仕様: `docs/miku-grep-context-lines-spec.md`
+
 ## stdout result JSON schema
 
 次の項目は stdout の result JSON schema として追加検討する。
@@ -156,10 +200,6 @@
 - [x] README public path hygiene
   - 実装: README の CLI specification link を repository-relative path に修正。
 
-- [ ] npm publish
-  - 方針: 当面の配布は GitHub Release のみとし、npm publish は遠い未来の検討事項とする。
-  - 実施時の確認候補: package name / ownership、npm provenance、2FA、publish access、README の npm install 手順、release workflow。
-
 - [x] package dry-run
   - 確認: `npm_config_cache=.npm-cache npm pack --dry-run` で package contents を確認。
   - 補足: default npm cache は local environment の権限問題で失敗したため、workspace-local cache を指定して確認した。
@@ -245,6 +285,24 @@
 
 - [x] security 実装と CLI spec の同期を取る
   - 実装: `request.root` realpath 境界チェック、`path_escape_skipped`、traversal limit、security diagnostic の扱いを `docs/miku-grep-cli-spec.md` に反映。
+
+## not planned / parking lot
+
+一通りの実装TODOは完了。以下は当面実施しない保留項目であり、必要になった段階で再検討する。
+
+- [ ] AI向け heading 付き Markdown summary
+  - 理由: `miku-grep` runtime の primary output は stdout JSON に固定する。
+  - 方針: Markdown summary が必要な場合は、まず Agent Skills / wrapper 側の derived formatter として扱う。
+  - 注意: runtime contract を Markdown に寄せすぎると、structured grep としての安定性が下がる可能性がある。
+
+- [ ] structural context
+  - 理由: match が属する Markdown heading、class / function、JSON / YAML path、XML / HTML element path などは構造解析寄りで、`miku-grep` 本体の grep 代替機能からは外れる。
+  - 方針: 別プロダクト候補として扱う。
+  - 検討候補: Markdown heading path、JS / TS / Java の class / function、JSON / YAML path、XML / HTML element path。
+
+- [ ] npm publish
+  - 方針: 当面の配布は GitHub Release のみとし、npm publish は遠い未来の検討事項とする。
+  - 実施時の確認候補: package name / ownership、npm provenance、2FA、publish access、README の npm install 手順、release workflow。
 
 ## later refactoring candidates
 

@@ -6,17 +6,17 @@ import { runRequest } from "../src/main.js";
 import { fixture } from "./helpers.js";
 
 describe("miku-grep content search", () => {
-  test("returns file-summary matches with defaults and excludes node_modules", async () => {
+  test("returns summary matches with defaults and excludes node_modules", async () => {
     const root = await fixture();
     const result = await runRequest({
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content", recursive: true, maxDepth: 5 },
+      search: { targets: ["content"], recursive: true, maxDepth: 5 },
     });
 
     expect(result.ok).toBe(true);
-    expect(result.effectiveRequest.output.mode).toBe("file-summary");
+    expect(result.effectiveRequest.output.mode).toBe("summary");
     expect(result.matches.map((match) => match.file)).toEqual(["README.md", "src/RepositoryMap.java"]);
     expect(result.summary.filesVisited).toBe(3);
     expect(result.summary.filesMatched).toBe(2);
@@ -67,7 +67,7 @@ describe("miku-grep content search", () => {
       root,
       query: { type: "literal", text: "RepositoryMap" },
       search: {
-        target: "content",
+        targets: ["content"],
         includeFileNamePatterns: ["*.java", "*.md"],
         excludeFileNamePatterns: ["README.md"],
       },
@@ -90,13 +90,13 @@ describe("miku-grep content search", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content", excludeDirNamePatterns: ["skip"] },
+      search: { targets: ["content"], excludeDirNamePatterns: ["skip"] },
     });
     const nonRecursive = await runRequest({
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content", recursive: false },
+      search: { targets: ["content"], recursive: false },
     });
 
     expect(excludedDir.ok).toBe(true);
@@ -115,7 +115,7 @@ describe("miku-grep content search", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content", excludeDirNamePatterns: [] },
+      search: { targets: ["content"], excludeDirNamePatterns: [] },
       output: { mode: "detail" },
     });
 
@@ -133,7 +133,7 @@ describe("miku-grep content search", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content" },
+      search: { targets: ["content"] },
       output: { mode: "detail" },
     });
 
@@ -153,7 +153,7 @@ describe("miku-grep content search", () => {
       version: 1,
       root,
       query: { type: "literal", text: "RepositoryMap" },
-      search: { target: "content", recursive: true, maxDepth: 1 },
+      search: { targets: ["content"], recursive: true, maxDepth: 1 },
     });
 
     expect(result.ok).toBe(true);
@@ -216,6 +216,73 @@ describe("miku-grep content search", () => {
     expect(result.matches).toEqual([
       expect.objectContaining({ file: "lines.txt", line: 2, column: 1 }),
       expect.objectContaining({ file: "lines.txt", line: 4, column: 1 }),
+    ]);
+  });
+
+  test("returns context lines for detail content hits", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "App.java"), "line 1\nline 2\nclass RepositoryMap {\nline 4\nline 5\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+      output: { mode: "detail", contextLinesBefore: 2, contextLinesAfter: 1 },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([
+      expect.objectContaining({
+        type: "content",
+        file: "App.java",
+        line: 3,
+        contextBefore: [
+          { line: 1, text: "line 1", trimmed: false },
+          { line: 2, text: "line 2", trimmed: false },
+        ],
+        contextAfter: [{ line: 4, text: "line 4", trimmed: false }],
+      }),
+    ]);
+    expect(result.summary.matches).toBe(1);
+  });
+
+  test("returns empty context arrays at file boundaries when context is requested", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "App.java"), "RepositoryMap\nline 2\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+      output: { mode: "detail", contextLines: 1 },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches[0]).toMatchObject({
+      contextBefore: [],
+      contextAfter: [{ line: 2, text: "line 2", trimmed: false }],
+    });
+  });
+
+  test("omits context fields for filepath and directory hits", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs"), { recursive: true });
+    await fs.writeFile(path.join(root, "docs.txt"), "not read\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "docs" },
+      search: { targets: ["filepath", "directory"] },
+      output: { mode: "detail", contextLines: 2 },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([
+      { type: "directory", path: "docs", matchedText: "docs" },
+      { type: "filepath", file: "docs.txt", matchedText: "docs" },
     ]);
   });
 });

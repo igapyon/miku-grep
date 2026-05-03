@@ -26,8 +26,8 @@ const request = {
   version: 1,
   root: ".",
   query: { type: "literal", text: "miku-grep" },
-  search: { target: "filename", recursive: true, maxDepth: 2 },
-  output: { mode: "file-summary", maxMatches: 10 },
+  search: { targets: ["filepath"], recursive: true, maxDepth: 2 },
+  output: { mode: "summary", maxMatches: 10 },
 };
 const stdioResult = await runWithInput(process.execPath, ["bundle/miku-grep.mjs"], `${JSON.stringify(request)}\n`);
 

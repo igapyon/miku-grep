@@ -1,7 +1,9 @@
 export type QueryType = "literal" | "regex";
-export type SearchTarget = "content" | "filename" | "both";
-export type OutputMode = "detail" | "file-summary";
+export type SearchTarget = "filepath" | "directory" | "content";
+export type OutputMode = "detail" | "summary";
 export type SupportedEncoding = "utf-8" | "shift_jis";
+export type IgnoreMode = "auto" | "none";
+export type IgnoreSource = ".gitignore" | ".ignore" | ".git/info/exclude";
 
 export type MikuGrepRequest = {
   version: 1;
@@ -11,7 +13,7 @@ export type MikuGrepRequest = {
     text: string;
   };
   search?: {
-    target?: SearchTarget;
+    targets?: SearchTarget[];
     recursive?: boolean;
     maxDepth?: number;
     maxFileBytes?: number;
@@ -28,11 +30,19 @@ export type MikuGrepRequest = {
     maxMatchesPerFile?: number;
     maxLineLength?: number;
     maxSnippetsPerFile?: number;
+    contextLines?: number;
+    contextLinesBefore?: number;
+    contextLinesAfter?: number;
   };
   encoding?: {
     default?: SupportedEncoding;
     rules?: EncodingRuleInput[];
     onDecodeError?: "skip";
+  };
+  ignore?: {
+    mode?: IgnoreMode;
+    sources?: IgnoreSource[];
+    useGlobalGitignore?: false;
   };
 };
 
@@ -54,7 +64,7 @@ export type EffectiveRequest = {
     text: string;
   };
   search: {
-    target: SearchTarget;
+    targets: SearchTarget[];
     recursive: boolean;
     maxDepth: number;
     maxFileBytes: number;
@@ -71,12 +81,27 @@ export type EffectiveRequest = {
     maxMatchesPerFile: number;
     maxLineLength: number;
     maxSnippetsPerFile: number;
+    contextLinesBefore: number;
+    contextLinesAfter: number;
   };
   encoding: {
     default: SupportedEncoding;
     rules: EncodingRuleInput[];
     onDecodeError: "skip";
   };
+  ignore: {
+    mode: IgnoreMode;
+    sources: IgnoreSource[];
+    useGlobalGitignore: false;
+    loadedSources: IgnoreLoadedSource[];
+  };
+};
+
+export type IgnoreLoadedSource = {
+  path: string;
+  baseDirectory: string;
+  patterns: number;
+  unsupportedPatterns: number;
 };
 
 export type Diagnostic = {
@@ -94,8 +119,13 @@ export type Diagnostic = {
 
 export type DetailMatch =
   | {
-      type: "filename";
+      type: "filepath";
       file: string;
+      matchedText: string;
+    }
+  | {
+      type: "directory";
+      path: string;
       matchedText: string;
     }
   | {
@@ -107,15 +137,24 @@ export type DetailMatch =
       text: string;
       trimmed: boolean;
       textStartColumn?: number;
+      contextBefore?: ContextLine[];
+      contextAfter?: ContextLine[];
       encoding: SupportedEncoding;
       encodingRule: EncodingRuleResult;
     };
 
+export type ContextLine = {
+  line: number;
+  text: string;
+  trimmed: boolean;
+  textStartColumn?: number;
+};
+
 export type FileSummaryMatch = {
   type: "file";
   file: string;
-  matchTypes: Array<"filename" | "content">;
-  filenameMatched: boolean;
+  matchTypes: Array<"filepath" | "content">;
+  filepathMatched: boolean;
   contentMatched: boolean;
   lines: number[];
   matchCount: number;
@@ -130,10 +169,23 @@ export type FileSummaryMatch = {
   encodingRule?: EncodingRuleResult;
 };
 
+export type DirectorySummaryMatch = {
+  type: "directory";
+  path: string;
+  matchTypes: ["directory"];
+  directoryMatched: true;
+  matchCount: number;
+};
+
 export type Summary = {
   filesVisited: number;
+  directoriesVisited: number;
   filesScanned: number;
+  directoriesScanned: number;
   filesMatched: number;
+  directoriesMatched: number;
+  filesIgnored: number;
+  directoriesIgnored: number;
   matches: number;
   diagnostics: number;
   truncated: boolean;
@@ -148,7 +200,7 @@ export type MikuGrepResult = {
     message: string;
   };
   effectiveRequest: EffectiveRequest | Record<string, never>;
-  matches: Array<DetailMatch | FileSummaryMatch>;
+  matches: Array<DetailMatch | FileSummaryMatch | DirectorySummaryMatch>;
   summary: Summary;
   diagnostics: Diagnostic[];
 };

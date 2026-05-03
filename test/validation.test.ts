@@ -15,9 +15,9 @@ describe("miku-grep request validation", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(Object.keys(result.effectiveRequest)).toEqual(["root", "query", "search", "output", "encoding"]);
+    expect(Object.keys(result.effectiveRequest)).toEqual(["root", "query", "search", "output", "encoding", "ignore"]);
     expect(Object.keys(result.effectiveRequest.search)).toEqual([
-      "target",
+      "targets",
       "recursive",
       "maxDepth",
       "maxFileBytes",
@@ -34,10 +34,13 @@ describe("miku-grep request validation", () => {
       "maxMatchesPerFile",
       "maxLineLength",
       "maxSnippetsPerFile",
+      "contextLinesBefore",
+      "contextLinesAfter",
     ]);
     expect(Object.keys(result.effectiveRequest.encoding)).toEqual(["default", "rules", "onDecodeError"]);
+    expect(Object.keys(result.effectiveRequest.ignore)).toEqual(["mode", "sources", "useGlobalGitignore", "loadedSources"]);
     expect(result.effectiveRequest.search).toMatchObject({
-      target: "content",
+      targets: ["content"],
       recursive: true,
       maxDepth: 20,
       maxFileBytes: 10485760,
@@ -53,13 +56,21 @@ describe("miku-grep request validation", () => {
       expect.arrayContaining([".git", ".svn", "node_modules", "target", "build", "dist", ".gradle", ".idea", ".vscode", ".settings", "vendor"]),
     );
     expect(result.effectiveRequest.output).toEqual({
-      mode: "file-summary",
+      mode: "summary",
       maxMatches: 200,
       maxMatchesPerFile: 20,
       maxLineLength: 240,
       maxSnippetsPerFile: 3,
+      contextLinesBefore: 0,
+      contextLinesAfter: 0,
     });
     expect(result.effectiveRequest.encoding).toEqual({ default: "utf-8", rules: [], onDecodeError: "skip" });
+    expect(result.effectiveRequest.ignore).toEqual({
+      mode: "auto",
+      sources: [".gitignore", ".ignore", ".git/info/exclude"],
+      useGlobalGitignore: false,
+      loadedSources: [],
+    });
   });
 
   test("rejects unknown fields", async () => {
@@ -106,6 +117,7 @@ describe("miku-grep request validation", () => {
     ["non-object search", (root: string) => ({ ...baseRequest(root), search: [] }), "invalid_request"],
     ["non-object output", (root: string) => ({ ...baseRequest(root), output: [] }), "invalid_request"],
     ["non-object encoding", (root: string) => ({ ...baseRequest(root), encoding: [] }), "invalid_request"],
+    ["non-object ignore", (root: string) => ({ ...baseRequest(root), ignore: [] }), "invalid_request"],
     ["non-string include pattern", (root: string) => ({ ...baseRequest(root), search: { includeFileNamePatterns: ["*.txt", 1] } }), "invalid_request"],
     ["non-string exclude file pattern", (root: string) => ({ ...baseRequest(root), search: { excludeFileNamePatterns: [false] } }), "invalid_request"],
     ["non-string exclude dir pattern", (root: string) => ({ ...baseRequest(root), search: { excludeDirNamePatterns: [{}] } }), "invalid_request"],
@@ -210,7 +222,8 @@ describe("miku-grep request validation", () => {
   test.each([
     ["invalid_version", (root: string) => ({ ...baseRequest(root), version: 2 })],
     ["invalid_query_type", (root: string) => ({ ...baseRequest(root), query: { type: "glob", text: "RepositoryMap" } })],
-    ["invalid_search_target", (root: string) => ({ ...baseRequest(root), search: { target: "path" } })],
+    ["invalid_search_target", (root: string) => ({ ...baseRequest(root), search: { targets: ["path"] } })],
+    ["duplicate_search_target", (root: string) => ({ ...baseRequest(root), search: { targets: ["content", "content"] } })],
     ["invalid_output_mode", (root: string) => ({ ...baseRequest(root), output: { mode: "raw" } })],
     ["regex_too_large", (root: string) => ({ ...baseRequest(root), query: { type: "regex", text: "a".repeat(1001) } })],
     ["unsafe_regex", (root: string) => ({ ...baseRequest(root), query: { type: "regex", text: "^(a+)+$" } })],
@@ -220,9 +233,17 @@ describe("miku-grep request validation", () => {
     ["max_directories_visited_too_large", (root: string) => ({ ...baseRequest(root), search: { maxDirectoriesVisited: 100001 } })],
     ["max_line_length_too_large", (root: string) => ({ ...baseRequest(root), output: { maxLineLength: 4001 } })],
     ["max_snippets_per_file_too_large", (root: string) => ({ ...baseRequest(root), output: { maxSnippetsPerFile: 101 } })],
+    ["context_lines_too_large", (root: string) => ({ ...baseRequest(root), output: { mode: "detail", contextLines: 21 } })],
+    ["invalid_context_lines", (root: string) => ({ ...baseRequest(root), output: { mode: "detail", contextLines: 1, contextLinesBefore: 1 } })],
+    ["invalid_context_lines", (root: string) => ({ ...baseRequest(root), output: { mode: "summary", contextLines: 1 } })],
     ["max_file_bytes_too_large", (root: string) => ({ ...baseRequest(root), search: { maxFileBytes: 104857601 } })],
     ["invalid_encoding", (root: string) => ({ ...baseRequest(root), encoding: { default: "euc-jp" } })],
     ["invalid_encoding_rule", (root: string) => ({ ...baseRequest(root), encoding: { rules: [{ fileNamePattern: "*.txt", encoding: "euc-jp" }] } })],
+    ["invalid_ignore_mode", (root: string) => ({ ...baseRequest(root), ignore: { mode: "always" } })],
+    ["invalid_ignore_sources", (root: string) => ({ ...baseRequest(root), ignore: { sources: ".gitignore" } })],
+    ["invalid_ignore_source", (root: string) => ({ ...baseRequest(root), ignore: { sources: ["custom.ignore"] } })],
+    ["invalid_ignore_global", (root: string) => ({ ...baseRequest(root), ignore: { useGlobalGitignore: true } })],
+    ["invalid_ignore_sources", (root: string) => ({ ...baseRequest(root), ignore: { mode: "none", sources: [".gitignore"] } })],
   ])("rejects requests with %s", async (expectedCode, createRequest) => {
     const root = await fixture();
     const result = await runRequest(createRequest(root));

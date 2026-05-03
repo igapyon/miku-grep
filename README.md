@@ -15,10 +15,11 @@
 主な用途:
 
 - file content から読むべき file を探す
-- file path / file name から候補を探す
-- content と filename の両方を同じ request で探す
+- file path から候補を探す
+- directory path から候補を探す
+- file path、directory path、content を組み合わせて探す
 - result JSON の `summary` と `diagnostics` を見て、検索範囲や skipped file を判断する
-- `file-summary` で候補 file を絞ってから、必要に応じて `detail` で snippet を読む
+- `summary` で候補 file を絞ってから、必要に応じて `detail` で snippet を読む
 
 `miku-grep` は semantic search ではありません。embedding search、意味による ranking、Git repository root の自動検出は行いません。
 
@@ -41,7 +42,7 @@ miku-grep < request.json > result.json
     "text": "RepositoryMap"
   },
   "search": {
-    "target": "content"
+    "targets": ["content"]
   }
 }
 ```
@@ -70,14 +71,14 @@ miku-grep --help
     "text": "diagnostics"
   },
   "search": {
-    "target": "content"
+    "targets": ["content"]
   }
 }
 ```
 
-### filename を検索する
+### file path を検索する
 
-`filename` は basename だけでなく、`root` からの相対 file path を検索します。
+`filepath` は `root` からの相対 file path を検索します。
 
 ```json
 {
@@ -88,12 +89,44 @@ miku-grep --help
     "text": "security"
   },
   "search": {
-    "target": "filename"
+    "targets": ["filepath"]
   }
 }
 ```
 
-### filename と content の両方を検索する
+### directory path を検索する
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "docs"
+  },
+  "search": {
+    "targets": ["directory"]
+  }
+}
+```
+
+### find のように file path と directory path を検索する
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "test"
+  },
+  "search": {
+    "targets": ["filepath", "directory"]
+  }
+}
+```
+
+### file path と content の両方を検索する
 
 ```json
 {
@@ -104,7 +137,7 @@ miku-grep --help
     "text": "encoding"
   },
   "search": {
-    "target": "both"
+    "targets": ["filepath", "content"]
   }
 }
 ```
@@ -122,7 +155,7 @@ include / exclude は glob pattern です。`query.type: "regex"` は検索語�
     "text": "effectiveRequest"
   },
   "search": {
-    "target": "content",
+    "targets": ["content"],
     "includeFileNamePatterns": ["*.ts", "*.md"],
     "excludeDirNamePatterns": [".git", "node_modules", "dist"]
   }
@@ -131,9 +164,28 @@ include / exclude は glob pattern です。`query.type: "regex"` は検索語�
 
 `excludeFileNamePatterns` と `excludeDirNamePatterns` が未指定の場合は default exclude preset が使われます。`.git`、`node_modules`、`target`、`build`、`dist`、`vendor` など、通常の検索で読みたくない directory は既定で除外されます。
 
+`.gitignore`、`.ignore`、`.git/info/exclude` は既定で尊重されます。ignore file を無効にして検索したい場合は `ignore.mode: "none"` を指定します。
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "RepositoryMap"
+  },
+  "search": {
+    "targets": ["content"]
+  },
+  "ignore": {
+    "mode": "none"
+  }
+}
+```
+
 ### detail 出力にする
 
-`output` 未指定時は `file-summary` です。まず候補 file を絞る用途ではこれが既定です。
+`output` 未指定時は `summary` です。まず候補 file を絞る用途ではこれが既定です。
 
 hit ごとの行、column、matched text が必要な場合は `detail` を指定します。
 
@@ -146,7 +198,7 @@ hit ごとの行、column、matched text が必要な場合は `detail` を指�
     "text": "RepositoryMap"
   },
   "search": {
-    "target": "content"
+    "targets": ["content"]
   },
   "output": {
     "mode": "detail",
@@ -156,6 +208,29 @@ hit ごとの行、column、matched text が必要な場合は `detail` を指�
   }
 }
 ```
+
+match 前後の行も一緒に読みたい場合は、`detail` mode で context lines を指定します。
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "RepositoryMap"
+  },
+  "search": {
+    "targets": ["content"]
+  },
+  "output": {
+    "mode": "detail",
+    "contextLinesBefore": 2,
+    "contextLinesAfter": 2
+  }
+}
+```
+
+`output.contextLines` を使うと、前後に同じ行数を指定できます。context lines は content hit の `contextBefore` / `contextAfter` として返り、`summary` mode には載せません。
 
 ### Shift_JIS file を検索する
 
@@ -170,7 +245,7 @@ encoding auto detect は行いません。UTF-8 以外を読む場合は encodin
     "text": "検索語"
   },
   "search": {
-    "target": "content",
+    "targets": ["content"],
     "includeFileNamePatterns": ["*.txt"]
   },
   "encoding": {
@@ -199,7 +274,7 @@ encoding auto detect は行いません。UTF-8 以外を読む場合は encodin
     "text": "Repository(Map|Index)"
   },
   "search": {
-    "target": "content"
+    "targets": ["content"]
   }
 }
 ```
@@ -219,8 +294,13 @@ stdout の result JSON は、成功時も期待可能な失敗時も同じ top-l
   "matches": [],
   "summary": {
     "filesVisited": 0,
+    "directoriesVisited": 0,
     "filesScanned": 0,
+    "directoriesScanned": 0,
     "filesMatched": 0,
+    "directoriesMatched": 0,
+    "filesIgnored": 0,
+    "directoriesIgnored": 0,
     "matches": 0,
     "diagnostics": 0,
     "truncated": false,
@@ -239,7 +319,7 @@ stdout の result JSON は、成功時も期待可能な失敗時も同じ top-l
 - `summary`: scanned file 数、hit 数、truncation の有無
 - `diagnostics`: skipped file、decode error、limit 到達、validation error など
 
-`file-summary` mode の `matches[]` は、1 matched file = 1 item です。agent が次に読む file を選ぶ最初の検索に向いています。
+`summary` mode の `matches[]` は、matched file / matched directory を item として返します。agent が次に読む file や見るべき directory を選ぶ最初の検索に向いています。
 
 `detail` mode の `matches[]` は、1 hit = 1 item です。line、column、matched text、snippet を見たい場合に使います。
 
@@ -304,6 +384,9 @@ npm run smoke:bundle
 
 - [miku-grep CLI Specification](docs/miku-grep-cli-spec.md)
 - [miku-grep Security Notes](docs/miku-grep-security.md)
+- [miku-grep Search Targets Specification](docs/miku-grep-search-targets-spec.md)
+- [miku-grep Context Lines Specification](docs/miku-grep-context-lines-spec.md)
+- [miku-grep Ignore Files Specification](docs/miku-grep-ignore-files-spec.md)
 - [Miku Software Overview Design](docs/miku-soft-00-overview-design-v20260427.md)
 - [Miku Software Main Application Design](docs/miku-soft-10-mainapp-design-v20260501.md)
 - [Miku Software Agent Skills Design](docs/miku-soft-40-agentskills-design-v20260501.md)
