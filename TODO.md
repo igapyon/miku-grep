@@ -2,6 +2,26 @@
 
 ## next specification candidates
 
+- [x] filepath / directory detail mode の同一 path 複数 hit を代表 hit に集約する
+  - 優先度: 高め。`query.type: "regex", text: ".*"` で path 一覧を取ると、末尾 zero-length match により同じ path が複数 item になりやすい。
+  - 目的: `filepath` / `directory` target の `detail` mode では、同一 file path / directory path を最大 1 item として返す。
+  - 実装: `content` target の `detail` mode は従来どおり 1 content hit = 1 item を維持。
+  - 実装: path target の代表 `matchedText` は、最初の non-empty match を優先し、なければ最初の zero-length match を使う。
+  - 実装: path target の `summary.matches` / summary item `matchCount` も代表 hit 1 件として数える。
+  - 実装: `detail returns one item per hit` という README / CLI spec の説明を、content hit と path hit の違いが分かる表現へ更新。
+  - 実装: `findMatches()` は content 用の全 hit 列挙として維持し、path target 側だけ representative hit を選ぶ helper を追加。
+  - 確認: `npm test` が成功。
+  - 関連: `docs/miku-grep-cli-spec.md`, `docs/miku-grep-search-targets-spec.md`
+
+- [ ] ignore file の negation / unignore pattern 対応を仕様検討・実装する
+  - 優先度: 高め。`.gitignore` を尊重すると説明する以上、`!pattern` は利用者の期待に入りやすい。
+  - 目的: `!keep.tmp` のような negation / unignore pattern を warning ではなく有効な ignore rule として扱う。
+  - 現状: `!pattern` は `unsupported_ignore_pattern` warning diagnostic として報告し、該当 pattern だけ skip している。
+  - 検討: ignore rule を単純な OR 除外ではなく、source / directory / 行順を維持した順序評価にする。
+  - 検討: 既存 subset の glob に対する negation だけを MVP 対象にし、Git ignore 完全互換とは分けて説明する。
+  - 検討: ignored directory 配下の file を unignore する場合の扱いを仕様化する。
+  - 関連: `docs/miku-grep-ignore-files-spec.md`
+
 - [x] ディレクトリ検索機能を仕様検討・実装する
   - 目的: `find` 代替として、file だけでなく directory entry も検索・返せるようにする。
   - 実装: `search.targets` 配列で `filepath` / `directory` / `content` を組み合わせられるようにした。

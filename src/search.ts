@@ -4,7 +4,7 @@ import { makeContext } from "./context-lines.js";
 import { decode, selectEncoding } from "./encoding.js";
 import { matchesAny } from "./glob.js";
 import { isIgnoredByRules, loadIgnoreRulesForDirectory } from "./ignore-files.js";
-import { findMatches, makeSnippet, splitLines } from "./match-text.js";
+import { chooseRepresentativeMatch, findMatches, makeSnippet, splitLines } from "./match-text.js";
 import { isPathInsideOrSame } from "./path-security.js";
 import { createSummary } from "./result.js";
 import { addDirectoryHit, addFileHit, buildDetailMatches, buildSummaryMatches, markTruncated } from "./search-results.js";
@@ -78,7 +78,8 @@ async function traverse(state: SearchState, absoluteDir: string, relativeDir: st
       state.summary.directoriesVisited += 1;
       if (hasTarget(state, "directory")) {
         state.summary.directoriesScanned += 1;
-        for (const hit of findMatches(relativePath, state.request.query)) {
+        const hit = chooseRepresentativeMatch(findMatches(relativePath, state.request.query));
+        if (hit) {
           addDirectoryHit(state, relativePath, { type: "directory", path: relativePath, matchedText: hit.text });
         }
       }
@@ -115,7 +116,8 @@ async function searchFile(state: SearchState, absolutePath: string, relativePath
   if (searchFilepath) {
     countedScanned = true;
     state.summary.filesScanned += 1;
-    for (const hit of findMatches(relativePath, state.request.query)) {
+    const hit = chooseRepresentativeMatch(findMatches(relativePath, state.request.query));
+    if (hit) {
       addFileHit(state, relativePath, { type: "filepath", file: relativePath, matchedText: hit.text });
     }
   }

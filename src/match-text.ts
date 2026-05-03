@@ -33,6 +33,10 @@ export function findMatches(text: string, query: { type: QueryType; text: string
   return hits;
 }
 
+export function chooseRepresentativeMatch(matches: TextMatch[]): TextMatch | null {
+  return matches.find((match) => match.text.length > 0) ?? matches[0] ?? null;
+}
+
 export function makeSnippet(line: string, matchIndex: number, matchLength: number, maxLineLength: number): Snippet {
   if (line.length <= maxLineLength) return { text: line, trimmed: false };
   const matchEnd = matchIndex + matchLength;

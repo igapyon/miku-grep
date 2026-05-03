@@ -166,6 +166,8 @@ include / exclude は glob pattern です。`query.type: "regex"` は検索語�
 
 `.gitignore`、`.ignore`、`.git/info/exclude` は既定で尊重されます。ignore file を無効にして検索したい場合は `ignore.mode: "none"` を指定します。
 
+注意: ignore file 対応は Git ignore の subset です。現時点では `!pattern` による negation / unignore など一部の pattern は未対応で、該当 pattern は `unsupported_ignore_pattern` warning diagnostic として報告されます。
+
 ```json
 {
   "version": 1,
@@ -321,7 +323,7 @@ stdout の result JSON は、成功時も期待可能な失敗時も同じ top-l
 
 `summary` mode の `matches[]` は、matched file / matched directory を item として返します。agent が次に読む file や見るべき directory を選ぶ最初の検索に向いています。
 
-`detail` mode の `matches[]` は、1 hit = 1 item です。line、column、matched text、snippet を見たい場合に使います。
+`detail` mode の `matches[]` は、content target では 1 content hit = 1 item です。filepath / directory target では 1 matched path = 最大 1 item で、同じ path 文字列内に複数 match がある場合は代表 `matchedText` を返します。line、column、matched text、snippet を見たい場合に使います。
 
 ## 注意点
 

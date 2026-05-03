@@ -192,6 +192,58 @@ describe("miku-grep filepath, directory, and combined search", () => {
     ]);
   });
 
+  test("returns at most one detail filepath hit per path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "README.md"), "readme\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: ".*" },
+      search: { targets: ["filepath"] },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([{ type: "filepath", file: "README.md", matchedText: "README.md" }]);
+    expect(result.summary.matches).toBe(1);
+  });
+
+  test("returns at most one detail directory hit per path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs"), { recursive: true });
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: ".*" },
+      search: { targets: ["directory"] },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([{ type: "directory", path: "docs", matchedText: "docs" }]);
+    expect(result.summary.matches).toBe(1);
+  });
+
+  test("keeps zero-length representative path hits when no non-empty hit exists", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "src"), { recursive: true });
+    await fs.writeFile(path.join(root, "src", "foo.ts"), "no content hit\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "(?=foo)" },
+      search: { targets: ["filepath"] },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([{ type: "filepath", file: "src/foo.ts", matchedText: "" }]);
+    expect(result.summary.matches).toBe(1);
+  });
+
   test("aggregates filepath and content hits in summary mode", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.mkdir(path.join(root, "src"), { recursive: true });

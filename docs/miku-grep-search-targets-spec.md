@@ -171,6 +171,19 @@ detail
 
 ## detail mode result
 
+`content` target の `detail` mode は 1 content hit = 1 item を返す。
+
+`filepath` / `directory` target の `detail` mode は 1 matched path = 最大 1 item を返す。同じ path 文字列内で query が複数回 match する場合、代表 match を 1 件だけ返す。
+
+代表 `matchedText` は次の優先順位で選ぶ。
+
+```text
+1. 最初の non-empty match
+2. non-empty match がなければ最初の zero-length match
+```
+
+このため、regex `.*` で path 一覧を取得しても、末尾の zero-length match によって同じ file / directory が複数 item になることはない。
+
 ### filepath match
 
 ```json
