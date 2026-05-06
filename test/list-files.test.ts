@@ -100,7 +100,7 @@ describe("miku-grep listFiles mode", () => {
     expect(result.summary.filesScanned).toBe(3);
   });
 
-  test("rejects query in listFiles mode", async () => {
+  test("rejects non-glob query in listFiles mode", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     const result = await runRequest({
       version: 1,
