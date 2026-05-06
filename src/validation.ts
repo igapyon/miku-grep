@@ -1,7 +1,7 @@
 import type { ValidationResult } from "./internal-types.js";
 import { hasNestedQuantifiedGroup } from "./regex-safety.js";
 import { DEFAULT_EXCLUDE_DIRS, DEFAULT_EXCLUDE_FILES, DEFAULTS, LIMITS, REQUEST_SHAPE, VERSION } from "./request-contract.js";
-import type { EffectiveRequest, EncodingRuleInput, IgnoreSource, QueryType, SearchTarget, SupportedEncoding } from "./public-types.js";
+import type { EffectiveRequest, EncodingPreset, EncodingRuleInput, IgnoreSource, QueryCase, QueryType, RequestMode, SearchTarget, SupportedEncoding } from "./public-types.js";
 
 export { VERSION } from "./request-contract.js";
 
@@ -11,18 +11,29 @@ export function validateAndNormalize(request: unknown): ValidationResult {
   if (unknown) return invalid("unknown_field", `unknown field: ${unknown}`);
   if (request.version !== VERSION) return invalid("invalid_version", "version must be 1");
   if (typeof request.root !== "string" || request.root.length === 0) return invalid("invalid_request", "root must be a non-empty string");
-  if (!isPlainObject(request.query)) return invalid("invalid_request", "query must be an object");
-  if (!["literal", "regex"].includes(String(request.query.type))) return invalid("invalid_query_type", "query.type must be literal or regex");
-  if (typeof request.query.text !== "string") return invalid("invalid_request", "query.text must be a string");
-  if (request.query.text.length === 0) return invalid("empty_query", "query.text must not be empty");
-  if (request.query.type === "regex") {
-    if (request.query.text.length > LIMITS.regexPatternLength) return invalid("regex_too_large", "query.text regex pattern is too large");
-    try {
-      new RegExp(request.query.text);
-    } catch {
-      return invalid("invalid_regex", "query.text is not a valid regular expression");
+  const detectGitRoot = request.detectGitRoot ?? false;
+  if (typeof detectGitRoot !== "boolean") return invalid("invalid_request", "detectGitRoot must be boolean");
+  const mode = request.mode ?? "search";
+  if (mode !== "search" && mode !== "listFiles") return invalid("invalid_mode", "mode must be search or listFiles");
+  let query: EffectiveRequest["query"];
+  if (mode === "search" || hasOwn(request, "query")) {
+    if (!isPlainObject(request.query)) return invalid("invalid_request", "query must be an object");
+    if (!["literal", "regex", "glob"].includes(String(request.query.type))) return invalid("invalid_query_type", "query.type must be literal, regex, or glob");
+    if (typeof request.query.text !== "string") return invalid("invalid_request", "query.text must be a string");
+    if (request.query.text.length === 0) return invalid("empty_query", "query.text must not be empty");
+    const queryCase = request.query.case ?? "sensitive";
+    if (queryCase !== "sensitive" && queryCase !== "insensitive") return invalid("invalid_query_case", "query.case must be sensitive or insensitive");
+    if (mode === "listFiles" && request.query.type !== "glob") return invalid("invalid_query_type", "listFiles query.type must be glob");
+    if (request.query.type === "regex") {
+      if (request.query.text.length > LIMITS.regexPatternLength) return invalid("regex_too_large", "query.text regex pattern is too large");
+      try {
+        new RegExp(request.query.text);
+      } catch {
+        return invalid("invalid_regex", "query.text is not a valid regular expression");
+      }
+      if (hasNestedQuantifiedGroup(request.query.text)) return invalid("unsafe_regex", "query.text regex pattern has nested quantified groups");
     }
-    if (hasNestedQuantifiedGroup(request.query.text)) return invalid("unsafe_regex", "query.text regex pattern has nested quantified groups");
+    query = { type: request.query.type as QueryType, text: request.query.text, case: queryCase as QueryCase };
   }
 
   const searchInput = request.search ?? {};
@@ -52,6 +63,7 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     if (!isSearchTarget(target)) return invalid("invalid_search_target", "search.targets[] must be filepath, directory, or content");
   }
   if (new Set(search.targets).size !== search.targets.length) return invalid("duplicate_search_target", "search.targets must not contain duplicate values");
+  if (mode === "search" && query?.type === "glob" && search.targets.includes("content")) return invalid("invalid_search_target", "query.type glob supports filepath and directory targets only");
   if (typeof search.recursive !== "boolean") return invalid("invalid_request", "search.recursive must be boolean");
   for (const check of [
     validateIntegerLimit(search.maxDepth, "search.maxDepth", 0, LIMITS.maxDepth, "max_depth_too_large"),
@@ -72,16 +84,18 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     maxMatchesPerFile: outputInput.maxMatchesPerFile ?? DEFAULTS.output.maxMatchesPerFile,
     maxLineLength: outputInput.maxLineLength ?? DEFAULTS.output.maxLineLength,
     maxSnippetsPerFile: outputInput.maxSnippetsPerFile ?? DEFAULTS.output.maxSnippetsPerFile,
+    includeReadfileRequestHints: outputInput.includeReadfileRequestHints ?? DEFAULTS.output.includeReadfileRequestHints,
     contextLines: outputInput.contextLines,
     contextLinesBefore: outputInput.contextLinesBefore,
     contextLinesAfter: outputInput.contextLinesAfter,
   };
-  if (!["detail", "summary"].includes(output.mode)) return invalid("invalid_output_mode", "output.mode must be detail or summary");
+  if (!["detail", "summary", "agent"].includes(output.mode)) return invalid("invalid_output_mode", "output.mode must be detail, summary, or agent");
+  if (typeof output.includeReadfileRequestHints !== "boolean") return invalid("invalid_request", "output.includeReadfileRequestHints must be boolean");
   const hasContextLines = hasOwn(outputInput, "contextLines");
   const hasContextLinesBefore = hasOwn(outputInput, "contextLinesBefore");
   const hasContextLinesAfter = hasOwn(outputInput, "contextLinesAfter");
   const hasAnyContextOption = hasContextLines || hasContextLinesBefore || hasContextLinesAfter;
-  if (output.mode === "summary" && hasAnyContextOption) return invalid("invalid_context_lines", "context lines are only supported in detail mode");
+  if (output.mode !== "detail" && hasAnyContextOption) return invalid("invalid_context_lines", "context lines are only supported in detail mode");
   if (hasContextLines && (hasContextLinesBefore || hasContextLinesAfter)) {
     return invalid("invalid_context_lines", "output.contextLines cannot be combined with contextLinesBefore or contextLinesAfter");
   }
@@ -108,10 +122,12 @@ export function validateAndNormalize(request: unknown): ValidationResult {
   }
 
   const encoding = {
+    preset: encodingInput.preset ?? DEFAULTS.encoding.preset,
     default: typeof encodingInput.default === "string" ? encodingInput.default : DEFAULTS.encoding.default,
     rules: encodingInput.rules ?? [],
     onDecodeError: encodingInput.onDecodeError ?? DEFAULTS.encoding.onDecodeError,
   };
+  if (encoding.preset !== null && encoding.preset !== "japanese-legacy") return invalid("invalid_encoding_preset", "encoding.preset must be japanese-legacy");
   if (!isSupportedEncoding(encoding.default)) return invalid("invalid_encoding", "encoding.default must be utf-8 or shift_jis");
   if (encoding.onDecodeError !== "skip") return invalid("invalid_request", "encoding.onDecodeError must be skip");
   if (!Array.isArray(encoding.rules)) return invalid("invalid_encoding_rule", "encoding.rules must be an array");
@@ -152,11 +168,15 @@ export function validateAndNormalize(request: unknown): ValidationResult {
   const excludeDirNamePatterns = search.excludeDirNamePatterns as string[];
   const targets = search.targets as SearchTarget[];
   const encodingRules = encoding.rules as EncodingRuleInput[];
+  const encodingPreset = encoding.preset as EncodingPreset | null;
   const ignoreSources = ignore.mode === "none" ? [] : (ignore.sources as IgnoreSource[]);
 
   const effectiveRequest: EffectiveRequest = {
+    requestedRoot: request.root,
     root: request.root,
-    query: { type: request.query.type as QueryType, text: request.query.text },
+    detectGitRoot,
+    mode: mode as RequestMode,
+    ...(query ? { query } : {}),
     search: {
       targets,
       recursive: search.recursive as boolean,
@@ -175,10 +195,12 @@ export function validateAndNormalize(request: unknown): ValidationResult {
       maxMatchesPerFile: output.maxMatchesPerFile as number,
       maxLineLength: output.maxLineLength as number,
       maxSnippetsPerFile: output.maxSnippetsPerFile as number,
+      includeReadfileRequestHints: output.includeReadfileRequestHints as boolean,
       contextLinesBefore: contextLinesBefore as number,
       contextLinesAfter: contextLinesAfter as number,
     },
     encoding: {
+      preset: encodingPreset,
       default: encoding.default,
       rules: encodingRules,
       onDecodeError: "skip",

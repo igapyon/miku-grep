@@ -21,7 +21,9 @@
 - result JSON の `summary` と `diagnostics` を見て、検索範囲や skipped file を判断する
 - `summary` で候補 file を絞ってから、必要に応じて `detail` で snippet を読む
 
-`miku-grep` は semantic search ではありません。embedding search、意味による ranking、Git repository root の自動検出は行いません。
+`miku-grep` は semantic search ではありません。embedding search や意味による ranking は行いません。
+
+次の方向性としては、AI agent が「探す」「候補を絞る」「次に読む file を選ぶ」流れをより自然に扱えるよう、簡易 ranking を前向きに検討しています。現時点ではユーザー数が少ないため、下方互換性よりも agent が扱いやすい request / result shape を優先して設計する方針です。
 
 ## すぐ使う
 
@@ -47,7 +49,9 @@ miku-grep < request.json > result.json
 }
 ```
 
-`root` が相対 path の場合、CLI process の current working directory から解決されます。`miku-grep` は Git repository root を自動検出しないため、検索したい directory を `root` に指定してください。
+`root` が相対 path の場合、CLI process の current working directory から解決されます。既定では指定された `root` だけを検索します。
+
+subdirectory から実行して repository 全体を検索したい場合は `detectGitRoot: true` を指定します。result の `effectiveRequest.requestedRoot` には指定された root、`effectiveRequest.root` には実際に使った root が返ります。
 
 `--version` と `--help` は stdin JSON なしで実行できます。
 
@@ -281,7 +285,156 @@ encoding auto detect は行いません。UTF-8 以外を読む場合は encodin
 }
 ```
 
-検索は case-sensitive です。`caseSensitive` や `ignoreCase` option はありません。case variation が必要な場合は regex pattern で表現してください。
+検索は default では case-sensitive です。大文字小文字を区別せずに検索したい場合は `query.case: "insensitive"` を指定します。
+
+### case-insensitive 検索
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "repositorymap",
+    "case": "insensitive"
+  },
+  "search": {
+    "targets": ["content"]
+  }
+}
+```
+
+### ファイル一覧モード
+
+`rg --files` 相当の file inventory を JSON で返す入口です。
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "mode": "listFiles"
+}
+```
+
+期待する情報:
+
+- `.gitignore` や exclude rule を反映した file path 一覧
+- extension / directory / file count summary
+- skipped path や unsupported ignore pattern の diagnostics
+
+`listFiles` mode では `matches[]` は空配列になり、file inventory は `files[]`、集計は `fileSummary` に返ります。
+
+### 次期仕様候補
+
+以下は現在の実装済み contract ではなく、次に仕様化・実装する候補です。
+
+### agent 向け summary mode
+
+大量の match から次に読む candidate を選びやすくする mode です。
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "RepositoryMap"
+  },
+  "output": {
+    "mode": "agent"
+  }
+}
+```
+
+path、target kind、match count、representative snippets、推奨 read range を返します。
+
+`agent` mode の `matches[]` は `agentFile` / `agentDirectory` item を返します。`agentFile` は `representativeSnippets` と `readRanges` を含みます。
+
+### miku-readfile request hint
+
+検索結果から `miku-readfile` に渡す request を作りやすくする handoff hint です。
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "RepositoryMap"
+  },
+  "output": {
+    "includeReadfileRequestHints": true
+  }
+}
+```
+
+`readfileHints[]` は matched file ごとに返ります。directory match だけの結果には readfile hint は付きません。
+
+### repo root 補助
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "detectGitRoot": true,
+  "query": {
+    "type": "literal",
+    "text": "RepositoryMap"
+  }
+}
+```
+
+### path glob query
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "glob",
+    "text": "**/*.md"
+  },
+  "search": {
+    "targets": ["filepath"]
+  }
+}
+```
+
+`query.type: "glob"` は root-relative path に対する検索です。`filepath` / `directory` target と `listFiles` mode の絞り込みで使えます。`content` target との組み合わせは validation error です。
+
+### encoding preset
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "検索語"
+  },
+  "encoding": {
+    "preset": "japanese-legacy"
+  }
+}
+```
+
+`japanese-legacy` preset は、よくある日本語 legacy text file pattern に Shift_JIS を適用します。明示 `encoding.rules` は preset より優先され、result の `encodingRule` には preset 由来かどうかが返ります。
+
+#### 簡易 ranking
+
+```json
+{
+  "version": 1,
+  "root": ".",
+  "query": {
+    "type": "literal",
+    "text": "RepositoryMap"
+  },
+  "output": {
+    "sort": "relevance"
+  }
+}
+```
 
 ## result の読み方
 
@@ -318,6 +471,9 @@ stdout の result JSON は、成功時も期待可能な失敗時も同じ top-l
 - `error`: `ok: false` のときの代表 error
 - `effectiveRequest`: default 適用後の実際の検索条件
 - `matches`: 検索結果。`output.mode` によって item shape が変わります
+- `files`: `mode: "listFiles"` の file path 一覧
+- `fileSummary`: `mode: "listFiles"` の extension / directory summary
+- `readfileHints`: `output.includeReadfileRequestHints: true` のときの `miku-readfile` handoff request
 - `summary`: scanned file 数、hit 数、truncation の有無
 - `diagnostics`: skipped file、decode error、limit 到達、validation error など
 

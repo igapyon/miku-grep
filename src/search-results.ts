@@ -1,6 +1,6 @@
 import { compareStrings } from "./string-order.js";
 import type { SearchState } from "./internal-types.js";
-import type { DetailMatch, DirectorySummaryMatch, FileSummaryMatch } from "./public-types.js";
+import type { AgentDirectoryMatch, AgentFileMatch, DetailMatch, DirectorySummaryMatch, FileSummaryMatch, ReadRangeCandidate } from "./public-types.js";
 
 export function addFileHit(state: SearchState, file: string, hit: DetailMatch): void {
   if (state.summary.matches >= state.request.output.maxMatches) {
@@ -89,6 +89,33 @@ export function buildSummaryMatches(state: SearchState): Array<FileSummaryMatch 
     .map((item) => (item.type === "file" ? { ...item, lines: item.lines.sort((a, b) => a - b) } : item));
 }
 
+export function buildAgentMatches(state: SearchState): Array<AgentFileMatch | AgentDirectoryMatch> {
+  return buildSummaryMatches(state).map((item) => {
+    if (item.type === "directory") {
+      return {
+        type: "agentDirectory",
+        path: item.path,
+        targetKind: "directory",
+        matchTypes: item.matchTypes,
+        matchCount: item.matchCount,
+      };
+    }
+    const lines = item.lines.sort((a, b) => a - b);
+    return {
+      type: "agentFile",
+      file: item.file,
+      targetKind: "file",
+      matchTypes: item.matchTypes,
+      matchCount: item.matchCount,
+      lines,
+      representativeSnippets: item.snippets,
+      readRanges: readRanges(lines),
+      ...(item.encoding ? { encoding: item.encoding } : {}),
+      ...(item.encodingRule ? { encodingRule: item.encodingRule } : {}),
+    };
+  });
+}
+
 function typeRank(type: DetailMatch["type"]): number {
   if (type === "directory") return 0;
   if (type === "filepath") return 1;
@@ -97,4 +124,12 @@ function typeRank(type: DetailMatch["type"]): number {
 
 function summaryPath(item: FileSummaryMatch | DirectorySummaryMatch): string {
   return item.type === "file" ? item.file : item.path;
+}
+
+function readRanges(lines: number[]): ReadRangeCandidate[] {
+  return lines.slice(0, 3).map((line) => ({
+    startLine: Math.max(1, line - 5),
+    endLine: line + 5,
+    reason: "match",
+  }));
 }

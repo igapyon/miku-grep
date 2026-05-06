@@ -2,6 +2,86 @@
 
 ## next specification candidates
 
+- [ ] AI agent 向け検索フロー強化を前向きに仕様検討・実装する
+  - 優先度: 最優先候補。`miku-grep` を「検索して終わり」ではなく、「探す」「候補を絞る」「次に読む file を選ぶ」流れまで支える tool として強化する。
+  - 前提: 現時点ではユーザー数が少ないため、下方互換性よりも agent が生成しやすい request JSON と読みやすい result JSON を優先してよい。
+  - 方針: 仕様を過度に grep 互換へ寄せず、repository search / inventory / handoff helper として自然な schema に整理する。
+  - 関連: `docs/miku-grep-cli-spec.md`, `README.md`
+
+- [x] case-insensitive 検索を仕様検討・実装する
+  - 優先度: 最優先候補。AI agent が検索語の大文字小文字を外して取りこぼすことを減らす。
+  - 目的: literal / regex / filepath / directory / content search の case sensitivity を request で指定できるようにする。
+  - 実装: `query.case` を `"sensitive"` / `"insensitive"` とし、default は `"sensitive"` とする。
+  - 実装: 互換性を重視しないため、`caseSensitive: false` より `query.case: "insensitive"` を採用した。
+  - 実装: regex search では Node.js `RegExp` の `i` flag 相当を内部で使うが、public schema には JavaScript 固有 flag を出さない。
+  - 実装: `matchedText` は source text 上の実際に match した文字列を返す。
+  - 確認: `npm test` が成功。
+  - 関連: `src/match-text.ts`, `src/validation.ts`, `docs/miku-grep-cli-spec.md`
+
+- [x] ファイル一覧モードを仕様検討・実装する
+  - 優先度: 最優先候補。`rg --files` 相当の repository inventory を JSON で返し、agent が最初の検索語や読む候補を決めやすくする。
+  - 目的: `query` なしで file path 一覧、extension / directory / file count summary、diagnostics を返せる mode を追加する。
+  - 実装: top-level `mode` を導入し、default は `"search"`、file listing は `"listFiles"` とする。
+  - 実装: `mode: "search"` のときだけ `query` を必須にし、`mode: "listFiles"` では不要にする。
+  - 実装: `.gitignore` / `.ignore` / `.git/info/exclude` と default exclude preset を検索時と同じ方針で反映する。
+  - 実装: result path は従来どおり `root` 相対、`/` separator、absolute path 不返却を維持する。
+  - 実装: `files[]` と `fileSummary` を listFiles 専用 result field として返す。`matches[]` は空配列にする。
+  - 確認: `npm test` が成功。
+  - 関連: `src/search.ts`, `src/result.ts`, `src/public-types.ts`, `docs/miku-grep-cli-spec.md`
+
+- [x] agent 向け summary mode を仕様検討・実装する
+  - 優先度: 高め。大量 match をそのまま返すのではなく、次に読む候補を選びやすい result shape を返す。
+  - 目的: path、target kind、match count、representative snippets、推奨 read range を file / directory 単位でまとめる。
+  - 実装: `output.mode: "agent"` を追加し、`summary` は機械的集計、`detail` は hit 詳細、`agent` は次に読む候補選定用と位置付ける。
+  - 実装: `agent` mode は `miku-readfile` へ渡しやすい read range 候補も返す。
+  - 実装: `matches[]` に `agentFile` / `agentDirectory` item を返す。
+  - 確認: `npm test` が成功。
+  - 関連: `src/search-results.ts`, `src/result.ts`, `docs/miku-grep-cli-spec.md`
+
+- [x] miku-readfile request hint を仕様検討・実装する
+  - 優先度: 高め。検索結果から `miku-readfile` request を組み立てやすくし、miku toolchain の agent workflow を自然につなげる。
+  - 目的: matched file や agent summary candidate ごとに、次に読むための request hint を返せるようにする。
+  - 実装: `output.includeReadfileRequestHints: true` を追加し、result に `readfileHints` を返す。
+  - 実装: hint は `version`、`root`、`files[].path` を含む最小 request から始める。
+  - 実装: file-bearing match item から生成し、directory-only match には hint を付けない。
+  - 確認: `npm test` が成功。
+  - 関連: `src/public-types.ts`, `src/result.ts`, `docs/miku-grep-cli-spec.md`
+
+- [x] repo root 補助を仕様検討・実装する
+  - 優先度: 中。agent が subdirectory から実行しても repository 全体を探索しやすくする。
+  - 目的: `.git` を上位探索し、request root の誤指定による探索漏れを減らす。
+  - 実装: top-level `detectGitRoot` を追加し、`true` の場合は `root` から上位の Git root を探索して effective root とする。
+  - 実装: `effectiveRequest.requestedRoot` に指定 root、`effectiveRequest.root` に実際に使った root を返す。
+  - 実装: default は `false` とし、探索範囲拡大は明示指定にする。
+  - 確認: `npm test` が成功。
+  - 関連: `src/main.ts`, `src/path-security.ts`, `docs/miku-grep-security.md`
+
+- [x] glob 検索を仕様検討・実装する
+  - 優先度: 中。検索語ではなく path glob で repository inventory を絞り込めるようにする。
+  - 目的: `**/*.md`、`src/**/*.ts`、`**/README.md`、`**/package.json`、`**/pom.xml` のような path inventory query を扱う。
+  - 実装: `query.type: "glob"` を追加し、`search.targets: ["filepath"]` / `["directory"]` や `mode: "listFiles"` と組み合わせる。
+  - 実装: 既存の basename glob とは別に、`**` を含む path glob を仕様化する。
+  - 実装: glob query は content search では validation error とし、filepath / directory target と listFiles filtering に適用する。
+  - 確認: `npm test` が成功。
+  - 関連: `src/glob.ts`, `src/validation.ts`, `docs/miku-grep-cli-spec.md`
+
+- [x] encoding preset を仕様検討・実装する
+  - 優先度: 中。Shift_JIS など日本語 legacy file を agent が指定しやすくする。
+  - 目的: よくある日本語 legacy file pattern を preset としてまとめ、明示 rule より低い優先度で適用する。
+  - 実装: `encoding.preset: "japanese-legacy"` を追加する。
+  - 実装: 明示 `encoding.rules` は preset より優先し、result / diagnostics に実際に使った encoding と rule source を返す。
+  - 実装: preset が扱う file pattern は仕様に固定し、環境依存の auto detect とは分ける。
+  - 確認: `npm test` が成功。
+  - 関連: `src/encoding.ts`, `src/public-types.ts`, `docs/miku-grep-cli-spec.md`
+
+- [ ] 簡易 ranking を仕様検討・実装する
+  - 優先度: 中から低。semantic ranking ではなく、agent が読みやすい順に候補を並べる deterministic heuristic として扱う。
+  - 目的: `README` / docs / src / test など用途別の優先、filepath match、match count、generated / vendor らしさ、diagnostics 有無を加味して候補順を調整する。
+  - 案: `output.sort: "path"` / `"relevance"` を追加し、`path` は deterministic path order、`relevance` は heuristic order とする。
+  - 実装: `relevance` の score または reason を result item に返し、agent が順序の根拠を確認できるようにする。
+  - 検討: default を `path` にするか `agent` mode だけ `relevance` にするかを決める。
+  - 関連: `src/search-results.ts`, `src/string-order.ts`, `docs/miku-grep-cli-spec.md`
+
 - [x] filepath / directory detail mode の同一 path 複数 hit を代表 hit に集約する
   - 優先度: 高め。`query.type: "regex", text: ".*"` で path 一覧を取ると、末尾 zero-length match により同じ path が複数 item になりやすい。
   - 目的: `filepath` / `directory` target の `detail` mode では、同一 file path / directory path を最大 1 item として返す。
@@ -101,12 +181,11 @@
 
 ## query / regex follow-up
 
-- [x] case-sensitive / case-insensitive search の扱い
-  - 決定: MVP は case-sensitive 固定。
-  - 決定: `caseSensitive` / `ignoreCase` option は持たない。
-  - 決定: case variation が必要な場合は `query.type: "regex"` の pattern で表現する。
-  - 決定: JavaScript 固有の regex flags を public schema にしない。
-  - Java CLI でも同じ意味にできる portable regex subset を前提にする。
+- [x] case-sensitive / case-insensitive search の扱いを見直す
+  - 旧決定: MVP は case-sensitive 固定、`caseSensitive` / `ignoreCase` option は持たない、case variation は regex pattern で表現する。
+  - 見直し理由: AI agent が検索語の大文字小文字を外して取りこぼすことを減らす価値が高く、現時点では下方互換性より agent usability を優先してよい。
+  - 実装: `query.case: "sensitive" | "insensitive"` を導入した。
+  - 実装: JavaScript 固有の regex flags を直接 public schema にせず、将来 Java CLI でも意味がずれにくい portable behavior として仕様化する。
 
 ## request / output defaults
 

@@ -42,6 +42,44 @@ describe("miku-grep content search", () => {
     ]);
   });
 
+  test("literal content search can be case-insensitive", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "case.txt"), "RepositoryMap\nrepositorymap\nREPOSITORYMAP\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "repositorymap", case: "insensitive" },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.query).toEqual({ type: "literal", text: "repositorymap", case: "insensitive" });
+    expect(result.matches).toEqual([
+      expect.objectContaining({ file: "case.txt", line: 1, column: 1, matchedText: "RepositoryMap" }),
+      expect.objectContaining({ file: "case.txt", line: 2, column: 1, matchedText: "repositorymap" }),
+      expect.objectContaining({ file: "case.txt", line: 3, column: 1, matchedText: "REPOSITORYMAP" }),
+    ]);
+  });
+
+  test("regex content search can be case-insensitive", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "regex-case.txt"), "RepositoryMap\nrepositorymap\nRepository\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "regex", text: "repositorymap", case: "insensitive" },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([
+      expect.objectContaining({ file: "regex-case.txt", line: 1, column: 1, matchedText: "RepositoryMap" }),
+      expect.objectContaining({ file: "regex-case.txt", line: 2, column: 1, matchedText: "repositorymap" }),
+    ]);
+  });
+
   test("regex search handles zero-length matches without hanging", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.writeFile(path.join(root, "zero.txt"), "ab\n", "utf8");
@@ -57,6 +95,62 @@ describe("miku-grep content search", () => {
     expect(result.matches).toEqual([
       expect.objectContaining({ file: "zero.txt", line: 1, column: 1, matchedText: "" }),
       expect.objectContaining({ file: "zero.txt", line: 1, column: 2, matchedText: "" }),
+    ]);
+  });
+
+  test("returns agent file candidates with read ranges", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "README.md"), "one\nRepositoryMap\nthree\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+      output: { mode: "agent" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([
+      {
+        type: "agentFile",
+        file: "README.md",
+        targetKind: "file",
+        matchTypes: ["content"],
+        matchCount: 1,
+        lines: [2],
+        representativeSnippets: [{ type: "content", line: 2, text: "RepositoryMap", trimmed: false }],
+        readRanges: [{ startLine: 1, endLine: 7, reason: "match" }],
+        encoding: "utf-8",
+        encodingRule: { type: "default" },
+      },
+    ]);
+  });
+
+  test("returns readfile request hints for matched files", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "src"), { recursive: true });
+    await fs.writeFile(path.join(root, "README.md"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "src", "App.ts"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+      output: { includeReadfileRequestHints: true },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.readfileHints).toEqual([
+      {
+        file: "README.md",
+        request: { version: 1, root, files: [{ path: "README.md" }] },
+      },
+      {
+        file: "src/App.ts",
+        request: { version: 1, root, files: [{ path: "src/App.ts" }] },
+      },
     ]);
   });
 

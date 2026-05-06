@@ -6,7 +6,15 @@
 
 The tool is a grep replacement focused on finding files and snippets that an agent should read next. It returns structured JSON, diagnostics, and summaries instead of human-oriented plain text.
 
-`miku-grep` is not a semantic retrieve tool. It does not perform embedding search, ranking by meaning, or Git repository root discovery.
+`miku-grep` is not a semantic retrieve tool. It does not perform embedding
+search or ranking by meaning.
+
+The next design direction is to strengthen the agent workflow around
+repository search: list candidate files, search with fewer casing mistakes,
+summarize likely next-read files, and hand off selected paths to read tools.
+Because the current user base is still small, the project may prefer a cleaner
+agent-oriented request / result shape over strict backward compatibility when
+the two conflict.
 
 ## Scope
 
@@ -17,7 +25,7 @@ MVP scope:
 - stdin JSON request
 - stdout JSON result
 - `filepath` / `directory` / `content`
-- `literal` / `regex`
+- `literal` / `regex` / `glob`
 - glob-based include / exclude
 - recursive search with `maxDepth`
 - `utf-8` / `shift_jis`
@@ -30,8 +38,14 @@ Out of scope for MVP:
 - semantic retrieve
 - MCP
 - Java CLI
-- Git root auto detection
 - encoding auto detection
+
+Next specification candidates:
+
+- `output.sort: "path" | "relevance"`
+
+These candidates are not part of the currently implemented contract until they
+are reflected in validation, help text, tests, and examples.
 
 ## CLI Contract
 
@@ -119,9 +133,11 @@ Example:
 {
   "version": 1,
   "root": ".",
+  "mode": "search",
   "query": {
     "type": "literal",
-    "text": "RepositoryMap"
+    "text": "RepositoryMap",
+    "case": "sensitive"
   },
   "search": {
     "targets": ["content"],
@@ -161,7 +177,17 @@ Example:
 
 If `root` is a relative path, it is resolved from the CLI process current working directory.
 
-`miku-grep` does not auto-detect the Git repository root. It searches only under `request.root`.
+By default, the implementation searches only under `request.root`.
+
+When top-level `detectGitRoot: true` is specified, the tool searches upward from
+`request.root` for `.git`, uses that directory as the effective root, and
+returns metadata that makes the requested root and effective root clear. This is
+intended to reduce missed files when an agent invokes the CLI from a
+subdirectory. The feature preserves the security rule that result paths are
+relative and absolute local paths are not leaked as normal match values.
+
+`effectiveRequest.requestedRoot` contains the input root. `effectiveRequest.root`
+contains the effective root used for traversal.
 
 Result `file` values are relative paths from `request.root`. Absolute paths must not be returned in result JSON.
 
@@ -184,7 +210,8 @@ file = "docs/miku-soft-00-overview-design-v20260427.md"
 ```json
 {
   "type": "literal",
-  "text": "RepositoryMap"
+  "text": "RepositoryMap",
+  "case": "sensitive"
 }
 ```
 
@@ -196,37 +223,96 @@ literal
 
 regex
   regular expression search
+
+glob
+  path glob search
 ```
 
 `query.type: "literal"` uses simple substring matching.
 
 ```text
 String.includes equivalent
-case-sensitive
 no Unicode normalization
 no locale-aware comparison
-no case folding
 ```
 
 `query.type: "regex"` affects only search query interpretation. It does not change include / exclude pattern handling.
 
-MVP search is case-sensitive.
+Search is case-sensitive by default.
 
-MVP does not provide `caseSensitive` or `ignoreCase` options.
+`query.case` values:
 
-When case variation is needed, express it in `query.type: "regex"` pattern text.
+```text
+sensitive
+  default
+
+insensitive
+  match without requiring the same uppercase / lowercase spelling
+```
+
+Prefer `query.case` over boolean names such as `caseSensitive` or `ignoreCase`
+because it leaves room for future explicit modes while keeping the request easy
+for agents to generate.
 
 MVP Node CLI uses Node.js `RegExp` for `query.type: "regex"`.
 
 Content regex search is applied line by line. Multi-line regex matching is outside MVP.
 
-MVP does not accept JavaScript-specific regex flags.
+The request schema should not expose JavaScript-specific regex flags directly.
+For `query.case: "insensitive"`, the Node implementation uses
+case-insensitive matching internally. The public behavior is documented in
+portable terms so a future Java CLI can implement the same intent.
 
 Regex pattern text must not exceed 1000 characters.
 
 Implementations should reject common ReDoS-prone nested quantified groups, such as `(.+)+` or `(a*)+`, as `unsafe_regex`.
 
 A future Java CLI may use Java's regex engine. Cross-runtime regex behavior is not guaranteed to be identical for all edge cases. Prefer portable basic regex patterns when the same request should work across Node and Java runtimes.
+
+`query.type: "glob"` searches root-relative paths. It supports path inventory
+queries such as:
+
+```text
+**/*.md
+src/**/*.ts
+**/README.md
+**/package.json
+**/pom.xml
+```
+
+This glob query is separate from the existing basename include / exclude globs.
+It supports path-level `**` matching. In `search` mode it is valid only with
+`filepath` and `directory` targets; combining it with `content` target is a
+validation error. In `listFiles` mode it filters listed file paths.
+
+### mode
+
+Top-level `mode` values:
+
+```text
+search
+  grep-like repository search; query is required
+
+listFiles
+  JSON file inventory; query is not required
+```
+
+`mode: "listFiles"` should behave like an agent-readable `rg --files` entry
+point. It respects the same root boundary, ignore files, default excludes,
+resource limits, deterministic path formatting, and diagnostics policy as
+search mode.
+
+The result should include:
+
+- file path list, relative to the effective root
+- extension summary
+- directory summary
+- file count summary
+- diagnostics for skipped or unreadable paths
+
+The result uses dedicated top-level `files[]` and `fileSummary` fields. It does
+not represent file inventory rows as grep matches, so `matches[]` is empty in
+`listFiles` mode.
 
 ### search
 
@@ -315,7 +401,7 @@ Lines longer than `search.maxLineChars` are skipped for content search and repor
 
 `includeFileNamePatterns`, `excludeFileNamePatterns`, and `excludeDirNamePatterns` are glob patterns.
 
-These are separate from `query.type: "regex"`.
+These are separate from `query.type: "regex"` and `query.type: "glob"`.
 
 MVP glob syntax supports only `*` and `?`.
 
@@ -425,8 +511,9 @@ Encoding rule priority:
 ```text
 1. pathPattern
 2. fileNamePattern
-3. encoding.default
-4. tool default utf-8
+3. encoding.preset expanded rules
+4. encoding.default
+5. tool default utf-8
 ```
 
 Encoding defaults:
@@ -438,9 +525,18 @@ encoding.default
 encoding.rules
   []
 
+encoding.preset
+  optional
+  supported value: japanese-legacy
+
 encoding.onDecodeError
   skip
 ```
+
+`encoding.preset: "japanese-legacy"` applies Shift_JIS to common Japanese
+legacy text file patterns after explicit `encoding.rules`. It is not automatic
+encoding detection. Diagnostics and result items return `encodingRule` so the
+actual encoding decision is traceable.
 
 For UTF-8 input, a leading UTF-8 BOM is removed from the decoded content before searching.
 
@@ -561,6 +657,7 @@ When `output` is omitted or partially specified, MVP applies these defaults.
   "maxMatchesPerFile": 20,
   "maxLineLength": 240,
   "maxSnippetsPerFile": 3,
+  "includeReadfileRequestHints": false,
   "contextLinesBefore": 0,
   "contextLinesAfter": 0
 }
@@ -588,6 +685,11 @@ maxSnippetsPerFile
   Maximum number of representative snippets in summary mode.
   Must not exceed 100.
 
+includeReadfileRequestHints
+  Boolean.
+  Default is false.
+  When true, result JSON includes readfileHints for matched files.
+
 contextLines
   Detail mode only.
   Shorthand for setting contextLinesBefore and contextLinesAfter to the same value.
@@ -610,9 +712,19 @@ Allowed `output.mode` values:
 ```text
 detail
 summary
+agent
 ```
 
 Any other `output.mode` is a validation error.
+
+```text
+agent
+  file / directory candidate summary optimized for choosing the next file to
+  read, including representative snippets and read range hints
+```
+
+`output.includeReadfileRequestHints: true` adds handoff hints that can be used
+to call `miku-readfile` for selected files.
 
 Successful result example:
 
@@ -622,10 +734,14 @@ Successful result example:
   "ok": true,
   "error": null,
   "effectiveRequest": {
+    "requestedRoot": ".",
     "root": ".",
+    "detectGitRoot": false,
+    "mode": "search",
     "query": {
       "type": "literal",
-      "text": "RepositoryMap"
+      "text": "RepositoryMap",
+      "case": "sensitive"
     },
     "search": {
       "targets": ["content"],
@@ -645,6 +761,7 @@ Successful result example:
       "maxMatchesPerFile": 20,
       "maxLineLength": 240,
       "maxSnippetsPerFile": 3,
+      "includeReadfileRequestHints": false,
       "contextLinesBefore": 0,
       "contextLinesAfter": 0
     },
@@ -708,10 +825,14 @@ Expected failure example:
     "message": "root is not accessible"
   },
   "effectiveRequest": {
+    "requestedRoot": "./private-repo",
     "root": "./private-repo",
+    "detectGitRoot": false,
+    "mode": "search",
     "query": {
       "type": "literal",
-      "text": "RepositoryMap"
+      "text": "RepositoryMap",
+      "case": "sensitive"
     },
     "search": {
       "targets": ["content"],
@@ -726,7 +847,11 @@ Expected failure example:
       "mode": "detail",
       "maxMatches": 200,
       "maxMatchesPerFile": 20,
-      "maxLineLength": 240
+      "maxLineLength": 240,
+      "maxSnippetsPerFile": 3,
+      "includeReadfileRequestHints": false,
+      "contextLinesBefore": 0,
+      "contextLinesAfter": 0
     },
     "encoding": {
       "default": "utf-8",
@@ -793,6 +918,78 @@ When a snippet starts after the beginning of the original line, return `textStar
 `textStartColumn` is 1-based.
 
 When `maxMatchesPerFile` is reached, search for that file stops, but traversal continues to the next file. This should be visible through `summary.truncated` / `summary.truncatedReason` and diagnostics when useful.
+
+## File Inventory
+
+`mode: "listFiles"` returns file inventory data in dedicated result fields:
+
+```json
+{
+  "version": 1,
+  "ok": true,
+  "error": null,
+  "effectiveRequest": {
+    "requestedRoot": ".",
+    "root": ".",
+    "detectGitRoot": false,
+    "mode": "listFiles"
+  },
+  "matches": [],
+  "files": [
+    {
+      "path": "README.md",
+      "extension": ".md",
+      "directory": "."
+    },
+    {
+      "path": "src/main.ts",
+      "extension": ".ts",
+      "directory": "src"
+    }
+  ],
+  "fileSummary": {
+    "files": 2,
+    "extensions": [
+      {
+        "extension": ".md",
+        "count": 1
+      },
+      {
+        "extension": ".ts",
+        "count": 1
+      }
+    ],
+    "directories": [
+      {
+        "path": ".",
+        "count": 1
+      },
+      {
+        "path": "src",
+        "count": 1
+      }
+    ]
+  },
+  "summary": {
+    "filesVisited": 2,
+    "directoriesVisited": 2,
+    "filesScanned": 2,
+    "directoriesScanned": 0,
+    "filesMatched": 0,
+    "directoriesMatched": 0,
+    "filesIgnored": 0,
+    "directoriesIgnored": 0,
+    "matches": 0,
+    "diagnostics": 0,
+    "truncated": false,
+    "truncatedReason": null
+  },
+  "diagnostics": []
+}
+```
+
+`files[]` is sorted by root-relative path using the same deterministic path
+ordering as search results.
 
 ### detail
 
@@ -887,6 +1084,82 @@ Directory hit:
   "matchedText": "java"
 }
 ```
+
+### agent
+
+`agent` returns candidate-oriented items in `matches[]`.
+
+File candidate:
+
+```json
+{
+  "type": "agentFile",
+  "file": "src/main.ts",
+  "targetKind": "file",
+  "matchTypes": ["content"],
+  "matchCount": 1,
+  "lines": [42],
+  "representativeSnippets": [
+    {
+      "type": "content",
+      "line": 42,
+      "text": "class RepositoryMap {",
+      "trimmed": false
+    }
+  ],
+  "readRanges": [
+    {
+      "startLine": 37,
+      "endLine": 47,
+      "reason": "match"
+    }
+  ],
+  "encoding": "utf-8",
+  "encodingRule": {
+    "type": "default"
+  }
+}
+```
+
+Directory candidate:
+
+```json
+{
+  "type": "agentDirectory",
+  "path": "docs",
+  "targetKind": "directory",
+  "matchTypes": ["directory"],
+  "matchCount": 1
+}
+```
+
+`readRanges` are suggestions for the next file-read operation. They are not
+line-boundary guarantees; a downstream reader should clamp them to the file's
+actual line count.
+
+## Readfile Hints
+
+When `output.includeReadfileRequestHints: true`, result JSON includes
+`readfileHints[]` for matched files.
+
+```json
+{
+  "file": "src/main.ts",
+  "request": {
+    "version": 1,
+    "root": ".",
+    "files": [
+      {
+        "path": "src/main.ts"
+      }
+    ]
+  }
+}
+```
+
+Hints are generated from file-bearing match items: `filepath`, `content`,
+`file`, and `agentFile`. Directory-only matches do not produce readfile hints.
+Each file appears at most once.
 
 ### summary
 
@@ -1180,7 +1453,9 @@ Minimum codes:
 invalid_request
 unknown_field
 invalid_version
+invalid_mode
 invalid_query_type
+invalid_query_case
 invalid_search_targets
 invalid_search_target
 duplicate_search_target
@@ -1208,6 +1483,7 @@ max_snippets_per_file_too_large
 context_lines_too_large
 max_file_bytes_too_large
 invalid_encoding
+invalid_encoding_preset
 invalid_encoding_rule
 ```
 
@@ -1234,7 +1510,13 @@ file path asc
 line asc
 ```
 
-Future sort modes such as score sort or modified-time sort are outside MVP.
+In the currently implemented MVP, sort modes such as score sort or
+modified-time sort are not part of the request contract.
+`output.sort: "relevance"` is now a next specification candidate, but it should
+remain a deterministic heuristic, not semantic ranking. The default stable path
+sort remains useful for reproducibility. A relevance sort should expose score
+or reason metadata so agents can understand why candidates were promoted or
+demoted.
 
 ## Node.js Runtime Artifact
 

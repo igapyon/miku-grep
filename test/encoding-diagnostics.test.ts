@@ -195,4 +195,36 @@ describe("miku-grep encoding and diagnostics", () => {
       encodingRule: { type: "pathPattern", pattern: "src/legacy.txt" },
     });
   });
+
+  test("applies japanese legacy encoding preset after explicit rules", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "legacy.txt"), Buffer.from("こんにちは\n", "utf8"));
+    await fs.writeFile(path.join(root, "legacy.csv"), Buffer.from([0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd, 0x0a]));
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "こんにちは" },
+      output: { mode: "detail" },
+      encoding: {
+        preset: "japanese-legacy",
+        rules: [{ fileNamePattern: "legacy.txt", encoding: "utf-8" }],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.encoding.preset).toBe("japanese-legacy");
+    expect(result.matches).toEqual([
+      expect.objectContaining({
+        file: "legacy.csv",
+        encoding: "shift_jis",
+        encodingRule: { type: "preset", preset: "japanese-legacy", pattern: "*.csv" },
+      }),
+      expect.objectContaining({
+        file: "legacy.txt",
+        encoding: "utf-8",
+        encodingRule: { type: "fileNamePattern", pattern: "legacy.txt" },
+      }),
+    ]);
+  });
 });
