@@ -32,7 +32,7 @@ export async function runListFiles(request: EffectiveRequest, rootPath: string, 
   };
 
   await traverse(state, rootPath, "", 0, []);
-  state.summary.filesScanned = state.files.length;
+  state.files.sort((a, b) => compareStrings(a.path, b.path));
   state.summary.diagnostics = diagnostics.length;
   return { files: state.files, fileSummary: summarizeFiles(state.files), summary: state.summary };
 }
@@ -90,6 +90,7 @@ async function traverse(state: ListFilesState, absoluteDir: string, relativeDir:
       continue;
     }
     if (!candidateFile(state, entry.name)) continue;
+    state.summary.filesScanned += 1;
     if (state.request.query && findMatches(relativePath, state.request.query).length === 0) continue;
     state.files.push({
       path: relativePath,

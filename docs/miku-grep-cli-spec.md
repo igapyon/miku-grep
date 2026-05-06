@@ -1002,6 +1002,10 @@ When `maxMatchesPerFile` is reached, search for that file stops, but traversal c
 `files[]` is sorted by root-relative path using the same deterministic path
 ordering as search results.
 
+In `listFiles` mode, `summary.filesScanned` counts files that passed ignore and
+include / exclude filtering and were checked for optional inventory filtering.
+It can be larger than `files[]` length when a glob query filters the inventory.
+
 ### detail
 
 `detail` returns one item per content hit for `content` targets.

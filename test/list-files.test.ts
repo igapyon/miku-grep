@@ -7,10 +7,13 @@ import { runRequest } from "../src/main.js";
 describe("miku-grep listFiles mode", () => {
   test("lists files with summaries and default excludes", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "a"), { recursive: true });
     await fs.mkdir(path.join(root, "docs"), { recursive: true });
     await fs.mkdir(path.join(root, "src"), { recursive: true });
     await fs.mkdir(path.join(root, "node_modules", "pkg"), { recursive: true });
     await fs.writeFile(path.join(root, "README.md"), "readme\n", "utf8");
+    await fs.writeFile(path.join(root, "a", "b.txt"), "nested\n", "utf8");
+    await fs.writeFile(path.join(root, "a.txt"), "sibling\n", "utf8");
     await fs.writeFile(path.join(root, "docs", "guide.md"), "guide\n", "utf8");
     await fs.writeFile(path.join(root, "src", "main.ts"), "main\n", "utf8");
     await fs.writeFile(path.join(root, "node_modules", "pkg", "index.js"), "skip\n", "utf8");
@@ -27,23 +30,27 @@ describe("miku-grep listFiles mode", () => {
     expect(result.matches).toEqual([]);
     expect(result.files).toEqual([
       { path: "README.md", extension: ".md", directory: "." },
+      { path: "a.txt", extension: ".txt", directory: "." },
+      { path: "a/b.txt", extension: ".txt", directory: "a" },
       { path: "docs/guide.md", extension: ".md", directory: "docs" },
       { path: "src/main.ts", extension: ".ts", directory: "src" },
     ]);
     expect(result.fileSummary).toEqual({
-      files: 3,
+      files: 5,
       extensions: [
         { extension: ".md", count: 2 },
+        { extension: ".txt", count: 2 },
         { extension: ".ts", count: 1 },
       ],
       directories: [
-        { path: ".", count: 1 },
+        { path: ".", count: 2 },
+        { path: "a", count: 1 },
         { path: "docs", count: 1 },
         { path: "src", count: 1 },
       ],
     });
-    expect(result.summary.filesVisited).toBe(3);
-    expect(result.summary.filesScanned).toBe(3);
+    expect(result.summary.filesVisited).toBe(5);
+    expect(result.summary.filesScanned).toBe(5);
   });
 
   test("respects ignore files and include patterns", async () => {
@@ -89,6 +96,8 @@ describe("miku-grep listFiles mode", () => {
     expect(result.ok).toBe(true);
     expect(result.files).toEqual([{ path: "docs/guide.md", extension: ".md", directory: "docs" }]);
     expect(result.fileSummary?.files).toBe(1);
+    expect(result.summary.filesVisited).toBe(3);
+    expect(result.summary.filesScanned).toBe(3);
   });
 
   test("rejects query in listFiles mode", async () => {
