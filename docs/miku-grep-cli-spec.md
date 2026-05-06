@@ -40,13 +40,6 @@ Out of scope for MVP:
 - Java CLI
 - encoding auto detection
 
-Next specification candidates:
-
-- `output.sort: "path" | "relevance"`
-
-These candidates are not part of the currently implemented contract until they
-are reflected in validation, help text, tests, and examples.
-
 ## CLI Contract
 
 The CLI uses stdin / stdout as its primary interface.
@@ -149,6 +142,7 @@ Example:
   },
   "output": {
     "mode": "detail",
+    "sort": "path",
     "maxMatches": 200,
     "maxMatchesPerFile": 20,
     "maxLineLength": 240
@@ -640,9 +634,17 @@ foo/
 build/*.tmp
 /build
 docs/**/*.tmp
+!important.log
+  negation / unignore; later matching rules override earlier matching rules
 ```
 
-MVP does not support negation / unignore (`!pattern`), escaped leading `#` or `!`, Git-compatible trailing-space escaping, character classes, or brace expansion. Unsupported patterns are skipped individually and reported as `unsupported_ignore_pattern`.
+MVP supports negation / unignore for the same pattern subset. If a directory is
+ignored, files below it cannot be restored unless the parent directory itself is
+also unignored, because traversal does not enter ignored directories.
+
+MVP does not support escaped leading `#` or `!`, Git-compatible trailing-space
+escaping, character classes, or brace expansion. Unsupported patterns are
+skipped individually and reported as `unsupported_ignore_pattern`.
 
 ## Result JSON
 
@@ -653,6 +655,7 @@ When `output` is omitted or partially specified, MVP applies these defaults.
 ```json
 {
   "mode": "summary",
+  "sort": "path",
   "maxMatches": 200,
   "maxMatchesPerFile": 20,
   "maxLineLength": 240,
@@ -668,6 +671,12 @@ Field meanings:
 ```text
 mode
   Default is summary because agents usually need to narrow candidate files first.
+
+sort
+  "path" or "relevance".
+  Default is path.
+  Relevance sort is a deterministic heuristic for summary and agent candidates,
+  not semantic ranking.
 
 maxMatches
   Maximum total hit count.
@@ -757,6 +766,7 @@ Successful result example:
     },
     "output": {
       "mode": "detail",
+      "sort": "path",
       "maxMatches": 200,
       "maxMatchesPerFile": 20,
       "maxLineLength": 240,
@@ -845,6 +855,7 @@ Expected failure example:
     },
     "output": {
       "mode": "detail",
+      "sort": "path",
       "maxMatches": 200,
       "maxMatchesPerFile": 20,
       "maxLineLength": 240,
@@ -1460,6 +1471,7 @@ invalid_search_targets
 invalid_search_target
 duplicate_search_target
 invalid_output_mode
+invalid_output_sort
 invalid_context_lines
 invalid_ignore_mode
 invalid_ignore_sources
@@ -1503,20 +1515,32 @@ Diagnostics should be emitted in stable order where practical. Prefer path / fil
 
 `effectiveRequest` should be serialized with stable key order matching the documented request shape.
 
-MVP match sort order:
+Default match sort order:
 
 ```text
 file path asc
 line asc
 ```
 
-In the currently implemented MVP, sort modes such as score sort or
-modified-time sort are not part of the request contract.
-`output.sort: "relevance"` is now a next specification candidate, but it should
-remain a deterministic heuristic, not semantic ranking. The default stable path
-sort remains useful for reproducibility. A relevance sort should expose score
-or reason metadata so agents can understand why candidates were promoted or
-demoted.
+`output.sort` values:
+
+```text
+path
+  default deterministic path order
+
+relevance
+  deterministic heuristic order for summary and agent candidates
+```
+
+`output.sort: "relevance"` is not semantic ranking. It scores candidates using
+observable repository-search signals such as filepath match, content match,
+match count, README / docs / src / test path hints, and generated / vendor-like
+path demotion. Items returned from `summary` and `agent` mode include
+`relevance.score` and `relevance.reasons` so agents can inspect why a candidate
+was promoted or demoted.
+
+`detail` mode keeps path / line ordering because the one-hit-per-item result is
+intended for exact hit inspection.
 
 ## Node.js Runtime Artifact
 

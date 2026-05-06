@@ -56,6 +56,7 @@ export const DEFAULTS = {
   },
   output: {
     mode: "summary",
+    sort: "path",
     maxMatches: 200,
     maxMatchesPerFile: 20,
     maxLineLength: 240,
@@ -98,6 +99,7 @@ export const REQUEST_SHAPE = {
   },
   output: {
     mode: true,
+    sort: true,
     maxMatches: true,
     maxMatchesPerFile: true,
     maxLineLength: true,

@@ -2,10 +2,12 @@
 
 ## next specification candidates
 
-- [ ] AI agent 向け検索フロー強化を前向きに仕様検討・実装する
+- [x] AI agent 向け検索フロー強化を前向きに仕様検討・実装する
   - 優先度: 最優先候補。`miku-grep` を「検索して終わり」ではなく、「探す」「候補を絞る」「次に読む file を選ぶ」流れまで支える tool として強化する。
   - 前提: 現時点ではユーザー数が少ないため、下方互換性よりも agent が生成しやすい request JSON と読みやすい result JSON を優先してよい。
   - 方針: 仕様を過度に grep 互換へ寄せず、repository search / inventory / handoff helper として自然な schema に整理する。
+  - 実装: case-insensitive search、listFiles、agent mode、readfile hints、detectGitRoot、glob query、encoding preset、relevance sort を追加した。
+  - 確認: `npm test` が成功。
   - 関連: `docs/miku-grep-cli-spec.md`, `README.md`
 
 - [x] case-insensitive 検索を仕様検討・実装する
@@ -74,12 +76,14 @@
   - 確認: `npm test` が成功。
   - 関連: `src/encoding.ts`, `src/public-types.ts`, `docs/miku-grep-cli-spec.md`
 
-- [ ] 簡易 ranking を仕様検討・実装する
+- [x] 簡易 ranking を仕様検討・実装する
   - 優先度: 中から低。semantic ranking ではなく、agent が読みやすい順に候補を並べる deterministic heuristic として扱う。
   - 目的: `README` / docs / src / test など用途別の優先、filepath match、match count、generated / vendor らしさ、diagnostics 有無を加味して候補順を調整する。
-  - 案: `output.sort: "path"` / `"relevance"` を追加し、`path` は deterministic path order、`relevance` は heuristic order とする。
+  - 実装: `output.sort: "path"` / `"relevance"` を追加し、`path` は deterministic path order、`relevance` は heuristic order とする。
+  - 実装: default は再現性を優先して `"path"` とし、`detail` mode は既存の path / line order を維持する。
   - 実装: `relevance` の score または reason を result item に返し、agent が順序の根拠を確認できるようにする。
-  - 検討: default を `path` にするか `agent` mode だけ `relevance` にするかを決める。
+  - 実装: `summary` / `agent` mode の item に `relevance.score` と `relevance.reasons` を返す。
+  - 確認: `npm test` が成功。
   - 関連: `src/search-results.ts`, `src/string-order.ts`, `docs/miku-grep-cli-spec.md`
 
 - [x] filepath / directory detail mode の同一 path 複数 hit を代表 hit に集約する
@@ -93,13 +97,13 @@
   - 確認: `npm test` が成功。
   - 関連: `docs/miku-grep-cli-spec.md`, `docs/miku-grep-search-targets-spec.md`
 
-- [ ] ignore file の negation / unignore pattern 対応を仕様検討・実装する
+- [x] ignore file の negation / unignore pattern 対応を仕様検討・実装する
   - 優先度: 高め。`.gitignore` を尊重すると説明する以上、`!pattern` は利用者の期待に入りやすい。
   - 目的: `!keep.tmp` のような negation / unignore pattern を warning ではなく有効な ignore rule として扱う。
-  - 現状: `!pattern` は `unsupported_ignore_pattern` warning diagnostic として報告し、該当 pattern だけ skip している。
-  - 検討: ignore rule を単純な OR 除外ではなく、source / directory / 行順を維持した順序評価にする。
-  - 検討: 既存 subset の glob に対する negation だけを MVP 対象にし、Git ignore 完全互換とは分けて説明する。
-  - 検討: ignored directory 配下の file を unignore する場合の扱いを仕様化する。
+  - 実装: ignore rule を単純な OR 除外ではなく、source / directory / 行順を維持した順序評価にする。
+  - 実装: 既存 subset の glob に対する negation を対象にし、Git ignore 完全互換とは分けて説明する。
+  - 実装: ignored directory 配下の file を unignore するには、親 directory 自体も unignore する必要があると仕様化する。
+  - 確認: `npm test` が成功。
   - 関連: `docs/miku-grep-ignore-files-spec.md`
 
 - [x] ディレクトリ検索機能を仕様検討・実装する
@@ -389,19 +393,20 @@
 
 一通りの実装TODOは完了。以下は当面実施しない保留項目であり、必要になった段階で再検討する。
 
-- [ ] AI向け heading 付き Markdown summary
+- AI向け heading 付き Markdown summary
+  - 方針: 実施なし。
   - 理由: `miku-grep` runtime の primary output は stdout JSON に固定する。
-  - 方針: Markdown summary が必要な場合は、まず Agent Skills / wrapper 側の derived formatter として扱う。
+  - 補足: Markdown summary が必要な場合は、まず Agent Skills / wrapper 側の derived formatter として扱う。
   - 注意: runtime contract を Markdown に寄せすぎると、structured grep としての安定性が下がる可能性がある。
 
-- [ ] structural context
+- structural context
+  - 方針: 実施なし。別プロダクト候補として扱う。
   - 理由: match が属する Markdown heading、class / function、JSON / YAML path、XML / HTML element path などは構造解析寄りで、`miku-grep` 本体の grep 代替機能からは外れる。
-  - 方針: 別プロダクト候補として扱う。
   - 検討候補: Markdown heading path、JS / TS / Java の class / function、JSON / YAML path、XML / HTML element path。
 
-- [ ] npm publish
-  - 方針: 当面の配布は GitHub Release のみとし、npm publish は遠い未来の検討事項とする。
-  - 実施時の確認候補: package name / ownership、npm provenance、2FA、publish access、README の npm install 手順、release workflow。
+- npm publish
+  - 方針: 実施なし。当面の配布は GitHub Release のみとし、npm publish は対象外とする。
+  - 理由: package name / ownership、npm provenance、2FA、publish access、npm install 手順、release workflow まで含めると、現時点の local-first CLI 配布方針より運用負荷が大きい。
 
 ## later refactoring candidates
 

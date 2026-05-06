@@ -3,6 +3,7 @@ export type QueryCase = "sensitive" | "insensitive";
 export type RequestMode = "search" | "listFiles";
 export type SearchTarget = "filepath" | "directory" | "content";
 export type OutputMode = "detail" | "summary" | "agent";
+export type OutputSort = "path" | "relevance";
 export type SupportedEncoding = "utf-8" | "shift_jis";
 export type EncodingPreset = "japanese-legacy";
 export type IgnoreMode = "auto" | "none";
@@ -32,6 +33,7 @@ export type MikuGrepRequest = {
   };
   output?: {
     mode?: OutputMode;
+    sort?: OutputSort;
     maxMatches?: number;
     maxMatchesPerFile?: number;
     maxLineLength?: number;
@@ -90,6 +92,7 @@ export type EffectiveRequest = {
   };
   output: {
     mode: OutputMode;
+    sort: OutputSort;
     maxMatches: number;
     maxMatchesPerFile: number;
     maxLineLength: number;
@@ -130,6 +133,11 @@ export type Diagnostic = {
   encoding?: SupportedEncoding;
   encodingRule?: EncodingRuleResult;
   details?: Record<string, unknown>;
+};
+
+export type RelevanceInfo = {
+  score: number;
+  reasons: string[];
 };
 
 export type DetailMatch =
@@ -180,6 +188,7 @@ export type FileSummaryMatch = {
     trimmed: boolean;
     textStartColumn?: number;
   }>;
+  relevance?: RelevanceInfo;
   encoding?: SupportedEncoding;
   encodingRule?: EncodingRuleResult;
 };
@@ -190,6 +199,7 @@ export type DirectorySummaryMatch = {
   matchTypes: ["directory"];
   directoryMatched: true;
   matchCount: number;
+  relevance?: RelevanceInfo;
 };
 
 export type ReadRangeCandidate = {
@@ -207,6 +217,7 @@ export type AgentFileMatch = {
   lines: number[];
   representativeSnippets: FileSummaryMatch["snippets"];
   readRanges: ReadRangeCandidate[];
+  relevance?: RelevanceInfo;
   encoding?: SupportedEncoding;
   encodingRule?: EncodingRuleResult;
 };
@@ -217,6 +228,7 @@ export type AgentDirectoryMatch = {
   targetKind: "directory";
   matchTypes: ["directory"];
   matchCount: number;
+  relevance?: RelevanceInfo;
 };
 
 export type Summary = {

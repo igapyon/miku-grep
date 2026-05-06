@@ -7,6 +7,7 @@ export type IgnoreRule = {
   sourcePath: string;
   baseDirectory: string;
   pattern: string;
+  negated: boolean;
   directoryOnly: boolean;
   anchored: boolean;
   hasSlash: boolean;
@@ -40,7 +41,11 @@ export async function loadIgnoreRulesForDirectory(
 }
 
 export function isIgnoredByRules(rules: IgnoreRule[], relativePath: string, isDirectory: boolean): boolean {
-  return rules.some((rule) => ruleMatches(rule, relativePath, isDirectory));
+  let ignored = false;
+  for (const rule of rules) {
+    if (ruleMatches(rule, relativePath, isDirectory)) ignored = !rule.negated;
+  }
+  return ignored;
 }
 
 function sourcesForDirectory(sources: IgnoreSource[], relativeDir: string): IgnoreSource[] {
@@ -69,18 +74,20 @@ function parseIgnoreFile(text: string, sourcePath: string, baseDirectory: string
       });
       continue;
     }
-    const anchored = trimmed.startsWith("/");
-    const directoryOnly = trimmed.endsWith("/");
-    const pattern = trimmed.replace(/^\/+/, "").replace(/\/+$/, "");
+    const negated = trimmed.startsWith("!");
+    const patternText = negated ? trimmed.slice(1) : trimmed;
+    const anchored = patternText.startsWith("/");
+    const directoryOnly = patternText.endsWith("/");
+    const pattern = patternText.replace(/^\/+/, "").replace(/\/+$/, "");
     if (!pattern) continue;
     loaded.patterns += 1;
-    rules.push({ sourcePath, baseDirectory, pattern, directoryOnly, anchored, hasSlash: pattern.includes("/") });
+    rules.push({ sourcePath, baseDirectory, pattern, negated, directoryOnly, anchored, hasSlash: pattern.includes("/") });
   }
   return rules;
 }
 
 function unsupportedPattern(pattern: string): boolean {
-  return pattern.startsWith("!") || pattern.startsWith("\\#") || pattern.startsWith("\\!") || /[\[\]{}]/.test(pattern);
+  return pattern.startsWith("\\#") || pattern.startsWith("\\!") || /[\[\]{}]/.test(pattern);
 }
 
 function ruleMatches(rule: IgnoreRule, relativePath: string, isDirectory: boolean): boolean {

@@ -100,6 +100,10 @@ REQUEST FIELDS
     "summary", "detail", or "agent". Default: "summary".
     "agent" returns candidate-oriented matches with read range suggestions.
 
+  output.sort
+    "path" or "relevance". Default: "path".
+    "relevance" sorts summary and agent candidates with deterministic heuristic metadata.
+
   output.maxMatches
     Default: 200. Maximum: 10000.
 
@@ -220,7 +224,7 @@ FULL STDIN / STDOUT EXAMPLE
           "excludeFileNamePatterns": ["*.class", "*.jar", "*.zip", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.pdf", ".classpath", ".project"],
           "excludeDirNamePatterns": [".git", ".svn", "node_modules", "target", "build", "dist", ".gradle", ".idea", ".vscode", ".settings", "vendor"]
         },
-        "output": { "mode": "summary", "maxMatches": 20, "maxMatchesPerFile": 20, "maxLineLength": 240, "maxSnippetsPerFile": 3, "includeReadfileRequestHints": false, "contextLinesBefore": 0, "contextLinesAfter": 0 },
+        "output": { "mode": "summary", "sort": "path", "maxMatches": 20, "maxMatchesPerFile": 20, "maxLineLength": 240, "maxSnippetsPerFile": 3, "includeReadfileRequestHints": false, "contextLinesBefore": 0, "contextLinesAfter": 0 },
         "encoding": { "default": "utf-8", "rules": [], "onDecodeError": "skip" },
         "ignore": { "mode": "auto", "sources": [".gitignore", ".ignore", ".git/info/exclude"], "useGlobalGitignore": false, "loadedSources": [] }
       },
@@ -300,7 +304,7 @@ COMMON DIAGNOSTIC CODES
   Validation / expected failures:
     invalid_request, unknown_field, invalid_version, invalid_mode, invalid_query_type, invalid_query_case,
     invalid_search_targets, invalid_search_target, duplicate_search_target,
-    invalid_output_mode, invalid_context_lines, invalid_regex,
+    invalid_output_mode, invalid_output_sort, invalid_context_lines, invalid_regex,
     regex_too_large, unsafe_regex,
     invalid_ignore_mode, invalid_ignore_sources, invalid_ignore_source, invalid_ignore_global,
     root_not_found, root_not_accessible, root_too_broad, empty_query,
@@ -332,6 +336,9 @@ EXAMPLES
 
   Agent summary:
     printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"RepositoryMap"},"output":{"mode":"agent"}}' | miku-grep
+
+  Agent summary with relevance sort:
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"RepositoryMap"},"output":{"mode":"agent","sort":"relevance"}}' | miku-grep
 
   Search with readfile hints:
     printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"RepositoryMap"},"output":{"includeReadfileRequestHints":true}}' | miku-grep

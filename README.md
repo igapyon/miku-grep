@@ -23,7 +23,7 @@
 
 `miku-grep` は semantic search ではありません。embedding search や意味による ranking は行いません。
 
-次の方向性としては、AI agent が「探す」「候補を絞る」「次に読む file を選ぶ」流れをより自然に扱えるよう、簡易 ranking を前向きに検討しています。現時点ではユーザー数が少ないため、下方互換性よりも agent が扱いやすい request / result shape を優先して設計する方針です。
+AI agent が「探す」「候補を絞る」「次に読む file を選ぶ」流れをより自然に扱えるよう、case-insensitive search、file inventory、agent summary、readfile hints、repo root 補助、glob query、encoding preset、簡易 ranking を備えています。現時点ではユーザー数が少ないため、下方互換性よりも agent が扱いやすい request / result shape を優先して設計する方針です。
 
 ## すぐ使う
 
@@ -170,7 +170,7 @@ include / exclude は glob pattern です。`query.type: "regex"` は検索語�
 
 `.gitignore`、`.ignore`、`.git/info/exclude` は既定で尊重されます。ignore file を無効にして検索したい場合は `ignore.mode: "none"` を指定します。
 
-注意: ignore file 対応は Git ignore の subset です。現時点では `!pattern` による negation / unignore など一部の pattern は未対応で、該当 pattern は `unsupported_ignore_pattern` warning diagnostic として報告されます。
+注意: ignore file 対応は Git ignore の subset です。`!pattern` による negation / unignore は対応していますが、escaped leading `#` / `!`、character class、brace expansion など一部の pattern は未対応で、該当 pattern は `unsupported_ignore_pattern` warning diagnostic として報告されます。
 
 ```json
 {
@@ -324,10 +324,6 @@ encoding auto detect は行いません。UTF-8 以外を読む場合は encodin
 
 `listFiles` mode では `matches[]` は空配列になり、file inventory は `files[]`、集計は `fileSummary` に返ります。
 
-### 次期仕様候補
-
-以下は現在の実装済み contract ではなく、次に仕様化・実装する候補です。
-
 ### agent 向け summary mode
 
 大量の match から次に読む candidate を選びやすくする mode です。
@@ -420,7 +416,7 @@ path、target kind、match count、representative snippets、推奨 read range �
 
 `japanese-legacy` preset は、よくある日本語 legacy text file pattern に Shift_JIS を適用します。明示 `encoding.rules` は preset より優先され、result の `encodingRule` には preset 由来かどうかが返ります。
 
-#### 簡易 ranking
+### 簡易 ranking
 
 ```json
 {
@@ -435,6 +431,8 @@ path、target kind、match count、representative snippets、推奨 read range �
   }
 }
 ```
+
+`output.sort: "relevance"` は semantic ranking ではなく、deterministic heuristic です。`summary` / `agent` mode の候補を README / docs / src / test / match count / path match / generated らしさなどで並べ替え、各 item に `relevance.score` と `relevance.reasons` を返します。default は再現性を優先して `path` です。
 
 ## result の読み方
 
