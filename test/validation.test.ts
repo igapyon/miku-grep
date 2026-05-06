@@ -34,6 +34,7 @@ describe("miku-grep request validation", () => {
     ]);
     expect(Object.keys(result.effectiveRequest.output)).toEqual([
       "mode",
+      "sort",
       "maxMatches",
       "maxMatchesPerFile",
       "maxLineLength",
@@ -63,6 +64,7 @@ describe("miku-grep request validation", () => {
     );
     expect(result.effectiveRequest.output).toEqual({
       mode: "summary",
+      sort: "path",
       maxMatches: 200,
       maxMatchesPerFile: 20,
       maxLineLength: 240,
@@ -259,6 +261,7 @@ describe("miku-grep request validation", () => {
     ["invalid_search_target", (root: string) => ({ ...baseRequest(root), search: { targets: ["path"] } })],
     ["duplicate_search_target", (root: string) => ({ ...baseRequest(root), search: { targets: ["content", "content"] } })],
     ["invalid_output_mode", (root: string) => ({ ...baseRequest(root), output: { mode: "raw" } })],
+    ["invalid_output_sort", (root: string) => ({ ...baseRequest(root), output: { sort: "score" } })],
     ["regex_too_large", (root: string) => ({ ...baseRequest(root), query: { type: "regex", text: "a".repeat(1001) } })],
     ["unsafe_regex", (root: string) => ({ ...baseRequest(root), query: { type: "regex", text: "^(a+)+$" } })],
     ["max_depth_too_large", (root: string) => ({ ...baseRequest(root), search: { maxDepth: 51 } })],

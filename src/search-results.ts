@@ -1,6 +1,6 @@
 import { compareStrings } from "./string-order.js";
 import type { SearchState } from "./internal-types.js";
-import type { AgentDirectoryMatch, AgentFileMatch, DetailMatch, DirectorySummaryMatch, FileSummaryMatch, ReadRangeCandidate } from "./public-types.js";
+import type { AgentDirectoryMatch, AgentFileMatch, DetailMatch, DirectorySummaryMatch, FileSummaryMatch, ReadRangeCandidate, RelevanceInfo } from "./public-types.js";
 
 export function addFileHit(state: SearchState, file: string, hit: DetailMatch): void {
   if (state.summary.matches >= state.request.output.maxMatches) {
@@ -84,9 +84,9 @@ export function buildDetailMatches(state: SearchState): DetailMatch[] {
 }
 
 export function buildSummaryMatches(state: SearchState): Array<FileSummaryMatch | DirectorySummaryMatch> {
-  return [...state.summariesByDirectory.values(), ...state.summariesByFile.values()]
-    .sort((a, b) => compareStrings(summaryPath(a), summaryPath(b)))
-    .map((item) => (item.type === "file" ? { ...item, lines: item.lines.sort((a, b) => a - b) } : item));
+  return sortSummaryMatches([...state.summariesByDirectory.values(), ...state.summariesByFile.values()], state.request.output.sort).map((item) =>
+    item.type === "file" ? { ...item, lines: item.lines.sort((a, b) => a - b) } : item,
+  );
 }
 
 export function buildAgentMatches(state: SearchState): Array<AgentFileMatch | AgentDirectoryMatch> {
@@ -98,6 +98,7 @@ export function buildAgentMatches(state: SearchState): Array<AgentFileMatch | Ag
         targetKind: "directory",
         matchTypes: item.matchTypes,
         matchCount: item.matchCount,
+        ...(item.relevance ? { relevance: item.relevance } : {}),
       };
     }
     const lines = item.lines.sort((a, b) => a - b);
@@ -110,6 +111,7 @@ export function buildAgentMatches(state: SearchState): Array<AgentFileMatch | Ag
       lines,
       representativeSnippets: item.snippets,
       readRanges: readRanges(lines),
+      ...(item.relevance ? { relevance: item.relevance } : {}),
       ...(item.encoding ? { encoding: item.encoding } : {}),
       ...(item.encodingRule ? { encodingRule: item.encodingRule } : {}),
     };
@@ -124,6 +126,72 @@ function typeRank(type: DetailMatch["type"]): number {
 
 function summaryPath(item: FileSummaryMatch | DirectorySummaryMatch): string {
   return item.type === "file" ? item.file : item.path;
+}
+
+function sortSummaryMatches(items: Array<FileSummaryMatch | DirectorySummaryMatch>, sort: "path" | "relevance"): Array<FileSummaryMatch | DirectorySummaryMatch> {
+  if (sort === "path") return items.sort((a, b) => compareStrings(summaryPath(a), summaryPath(b)));
+  return items
+    .map((item) => ({ item: withRelevance(item), relevance: relevanceFor(item) }))
+    .sort((a, b) => b.relevance.score - a.relevance.score || compareStrings(summaryPath(a.item), summaryPath(b.item)))
+    .map(({ item }) => item);
+}
+
+function withRelevance(item: FileSummaryMatch | DirectorySummaryMatch): FileSummaryMatch | DirectorySummaryMatch {
+  const relevance = relevanceFor(item);
+  return { ...item, relevance };
+}
+
+function relevanceFor(item: FileSummaryMatch | DirectorySummaryMatch): RelevanceInfo {
+  const candidatePath = summaryPath(item);
+  const lowerPath = candidatePath.toLowerCase();
+  const basename = lowerPath.split("/").at(-1) ?? lowerPath;
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (item.type === "file") {
+    if (item.filepathMatched) {
+      score += 40;
+      reasons.push("filepath-match");
+    }
+    if (item.contentMatched) {
+      score += 20;
+      reasons.push("content-match");
+    }
+  } else {
+    score += 15;
+    reasons.push("directory-match");
+  }
+
+  const matchCountScore = Math.min(30, item.matchCount * 3);
+  score += matchCountScore;
+  reasons.push(`match-count:${item.matchCount}`);
+
+  if (basename === "readme.md" || basename.startsWith("readme.")) {
+    score += 30;
+    reasons.push("readme");
+  }
+  if (lowerPath === "docs" || lowerPath.startsWith("docs/") || lowerPath.includes("/docs/")) {
+    score += 20;
+    reasons.push("docs-path");
+  }
+  if (lowerPath === "src" || lowerPath.startsWith("src/") || lowerPath.includes("/src/")) {
+    score += 15;
+    reasons.push("src-path");
+  }
+  if (lowerPath === "test" || lowerPath === "tests" || lowerPath.startsWith("test/") || lowerPath.startsWith("tests/") || lowerPath.includes("/test/") || lowerPath.includes("/tests/")) {
+    score += 10;
+    reasons.push("test-path");
+  }
+  if (isLowPriorityPath(lowerPath)) {
+    score -= 40;
+    reasons.push("generated-or-vendor-path");
+  }
+
+  return { score, reasons };
+}
+
+function isLowPriorityPath(lowerPath: string): boolean {
+  return /(^|\/)(generated|vendor|node_modules|dist|build|target|coverage)(\/|$)/.test(lowerPath);
 }
 
 function readRanges(lines: number[]): ReadRangeCandidate[] {

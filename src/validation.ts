@@ -1,7 +1,7 @@
 import type { ValidationResult } from "./internal-types.js";
 import { hasNestedQuantifiedGroup } from "./regex-safety.js";
 import { DEFAULT_EXCLUDE_DIRS, DEFAULT_EXCLUDE_FILES, DEFAULTS, LIMITS, REQUEST_SHAPE, VERSION } from "./request-contract.js";
-import type { EffectiveRequest, EncodingPreset, EncodingRuleInput, IgnoreSource, QueryCase, QueryType, RequestMode, SearchTarget, SupportedEncoding } from "./public-types.js";
+import type { EffectiveRequest, EncodingPreset, EncodingRuleInput, IgnoreSource, OutputSort, QueryCase, QueryType, RequestMode, SearchTarget, SupportedEncoding } from "./public-types.js";
 
 export { VERSION } from "./request-contract.js";
 
@@ -80,6 +80,7 @@ export function validateAndNormalize(request: unknown): ValidationResult {
 
   const output = {
     mode: typeof outputInput.mode === "string" ? outputInput.mode : DEFAULTS.output.mode,
+    sort: outputInput.sort ?? DEFAULTS.output.sort,
     maxMatches: outputInput.maxMatches ?? DEFAULTS.output.maxMatches,
     maxMatchesPerFile: outputInput.maxMatchesPerFile ?? DEFAULTS.output.maxMatchesPerFile,
     maxLineLength: outputInput.maxLineLength ?? DEFAULTS.output.maxLineLength,
@@ -90,6 +91,7 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     contextLinesAfter: outputInput.contextLinesAfter,
   };
   if (!["detail", "summary", "agent"].includes(output.mode)) return invalid("invalid_output_mode", "output.mode must be detail, summary, or agent");
+  if (output.sort !== "path" && output.sort !== "relevance") return invalid("invalid_output_sort", "output.sort must be path or relevance");
   if (typeof output.includeReadfileRequestHints !== "boolean") return invalid("invalid_request", "output.includeReadfileRequestHints must be boolean");
   const hasContextLines = hasOwn(outputInput, "contextLines");
   const hasContextLinesBefore = hasOwn(outputInput, "contextLinesBefore");
@@ -191,6 +193,7 @@ export function validateAndNormalize(request: unknown): ValidationResult {
     },
     output: {
       mode: output.mode as EffectiveRequest["output"]["mode"],
+      sort: output.sort as OutputSort,
       maxMatches: output.maxMatches as number,
       maxMatchesPerFile: output.maxMatchesPerFile as number,
       maxLineLength: output.maxLineLength as number,

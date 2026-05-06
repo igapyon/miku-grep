@@ -186,14 +186,14 @@ build/*.tmp
 
 docs/**/*.tmp
   current ignore file の directory 以下の path glob
+
+!important.log
+  negation / unignore。後続の matching rule が前の matching rule を上書きする
 ```
 
 対応しない pattern:
 
 ```text
-!important.log
-  negation / unignore
-
 \#literal
   escaped leading hash
 
@@ -211,6 +211,8 @@ brace expansion
 ```
 
 unsupported pattern はその ignore file 全体を無効にせず、該当 pattern だけ無視し、`unsupported_ignore_pattern` diagnostic を返す。
+
+negation / unignore は対応済み pattern subset に対して有効である。評価は ignore file の出現順を維持し、最後に match した rule が勝つ。directory が ignore された場合、その directory 自体も unignore しない限り traversal しないため、配下 file だけを `!dir/file.txt` で復活させることはできない。
 
 ## 既存 exclude との関係
 

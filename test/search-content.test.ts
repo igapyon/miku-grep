@@ -127,6 +127,64 @@ describe("miku-grep content search", () => {
     ]);
   });
 
+  test("sorts summary matches by deterministic relevance with reasons", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "src"), { recursive: true });
+    await fs.mkdir(path.join(root, "vendor"), { recursive: true });
+    await fs.writeFile(path.join(root, "README.md"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "src", "App.ts"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "vendor", "Generated.ts"), "RepositoryMap\nRepositoryMap\nRepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"], excludeDirNamePatterns: [] },
+      output: { sort: "relevance" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.output.sort).toBe("relevance");
+    expect(result.matches.map((match) => ("file" in match ? match.file : match.path))).toEqual(["README.md", "src/App.ts", "vendor/Generated.ts"]);
+    expect(result.matches[0]).toMatchObject({
+      type: "file",
+      relevance: {
+        reasons: expect.arrayContaining(["content-match", "readme", "match-count:1"]),
+      },
+    });
+    expect(result.matches[2]).toMatchObject({
+      type: "file",
+      relevance: {
+        reasons: expect.arrayContaining(["generated-or-vendor-path", "match-count:3"]),
+      },
+    });
+  });
+
+  test("sorts agent matches by relevance and preserves candidate metadata", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "src"), { recursive: true });
+    await fs.writeFile(path.join(root, "README.md"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "src", "App.ts"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+      output: { mode: "agent", sort: "relevance" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches.map((match) => ("file" in match ? match.file : match.path))).toEqual(["README.md", "src/App.ts"]);
+    expect(result.matches[0]).toMatchObject({
+      type: "agentFile",
+      relevance: {
+        reasons: expect.arrayContaining(["readme", "content-match"]),
+      },
+      readRanges: [{ startLine: 1, endLine: 6, reason: "match" }],
+    });
+  });
+
   test("returns readfile request hints for matched files", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.mkdir(path.join(root, "src"), { recursive: true });

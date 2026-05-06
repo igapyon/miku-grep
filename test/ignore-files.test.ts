@@ -70,10 +70,75 @@ describe("miku-grep ignore files", () => {
     ]);
   });
 
-  test("reports unsupported ignore patterns and skips only that pattern", async () => {
+  test("supports negation patterns with last matching rule wins", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, ".gitignore"), "*.tmp\n!keep.tmp\n", "utf8");
+    await fs.writeFile(path.join(root, "keep.tmp"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "skip.tmp"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "keep.txt"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches.map((match) => match.file)).toEqual(["keep.tmp", "keep.txt"]);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.effectiveRequest.ignore.loadedSources).toEqual([
+      { path: ".gitignore", baseDirectory: ".", patterns: 2, unsupportedPatterns: 0 },
+    ]);
+  });
+
+  test("later ignore rules can override earlier negation patterns", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.writeFile(path.join(root, ".gitignore"), "!keep.tmp\n*.tmp\n", "utf8");
     await fs.writeFile(path.join(root, "keep.tmp"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "keep.txt"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([expect.objectContaining({ type: "file", file: "keep.txt" })]);
+    expect(result.effectiveRequest.ignore.loadedSources).toEqual([
+      { path: ".gitignore", baseDirectory: ".", patterns: 2, unsupportedPatterns: 0 },
+    ]);
+  });
+
+  test("requires parent directories to be unignored before nested files can be restored", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "generated"), { recursive: true });
+    await fs.writeFile(path.join(root, ".gitignore"), "generated/\n!generated/\ngenerated/*\n!generated/keep.txt\n", "utf8");
+    await fs.writeFile(path.join(root, "generated", "keep.txt"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "generated", "skip.txt"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([expect.objectContaining({ type: "file", file: "generated/keep.txt" })]);
+    expect(result.summary.filesIgnored).toBe(1);
+    expect(result.summary.directoriesIgnored).toBe(0);
+    expect(result.effectiveRequest.ignore.loadedSources).toEqual([
+      { path: ".gitignore", baseDirectory: ".", patterns: 4, unsupportedPatterns: 0 },
+    ]);
+  });
+
+  test("reports still-unsupported ignore patterns and skips only that pattern", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, ".gitignore"), "[ab].tmp\n*.tmp\n", "utf8");
+    await fs.writeFile(path.join(root, "a.tmp"), "RepositoryMap\n", "utf8");
     await fs.writeFile(path.join(root, "keep.txt"), "RepositoryMap\n", "utf8");
 
     const result = await runRequest({
