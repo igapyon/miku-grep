@@ -55,7 +55,7 @@ REQUEST FIELDS
   mode
     "search" or "listFiles". Default: "search".
     "search" requires query.
-    "listFiles" returns file inventory JSON and must not specify query.
+    "listFiles" returns file inventory JSON. Optional query must use query.type "glob".
 
   search.targets
     Non-empty array of "filepath", "directory", and/or "content".
