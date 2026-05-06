@@ -70,6 +70,26 @@ describe("miku-grep filepath, directory, and combined search", () => {
     ]);
   });
 
+  test("filepath and directory search can be case-insensitive", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "Docs"), { recursive: true });
+    await fs.writeFile(path.join(root, "Docs", "Guide.TXT"), "not read\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "docs", case: "insensitive" },
+      search: { targets: ["filepath", "directory"] },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([
+      { type: "directory", path: "Docs", matchedText: "Docs" },
+      { type: "filepath", file: "Docs/Guide.TXT", matchedText: "Docs" },
+    ]);
+  });
+
   test("aggregates directory hits in summary mode", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
     await fs.mkdir(path.join(root, "docs", "api"), { recursive: true });
@@ -96,6 +116,58 @@ describe("miku-grep filepath, directory, and combined search", () => {
         matchTypes: ["directory"],
         directoryMatched: true,
         matchCount: 1,
+      },
+    ]);
+  });
+
+  test("returns agent directory candidates", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs", "api"), { recursive: true });
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "docs" },
+      search: { targets: ["directory"] },
+      output: { mode: "agent" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([
+      {
+        type: "agentDirectory",
+        path: "docs",
+        targetKind: "directory",
+        matchTypes: ["directory"],
+        matchCount: 1,
+      },
+      {
+        type: "agentDirectory",
+        path: "docs/api",
+        targetKind: "directory",
+        matchTypes: ["directory"],
+        matchCount: 1,
+      },
+    ]);
+  });
+
+  test("deduplicates readfile request hints for combined file targets", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.writeFile(path.join(root, "RepositoryMap.ts"), "RepositoryMap\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["filepath", "content"] },
+      output: { mode: "detail", includeReadfileRequestHints: true },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.readfileHints).toEqual([
+      {
+        file: "RepositoryMap.ts",
+        request: { version: 1, root, files: [{ path: "RepositoryMap.ts" }] },
       },
     ]);
   });
@@ -190,6 +262,43 @@ describe("miku-grep filepath, directory, and combined search", () => {
       { type: "filepath", file: "README.md", matchedText: ".md" },
       { type: "filepath", file: "docs/development.md", matchedText: ".md" },
     ]);
+  });
+
+  test("searches file paths with glob query", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs"), { recursive: true });
+    await fs.mkdir(path.join(root, "src"), { recursive: true });
+    await fs.writeFile(path.join(root, "README.md"), "readme\n", "utf8");
+    await fs.writeFile(path.join(root, "docs", "guide.md"), "guide\n", "utf8");
+    await fs.writeFile(path.join(root, "src", "main.ts"), "main\n", "utf8");
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "glob", text: "**/*.md" },
+      search: { targets: ["filepath"] },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([{ type: "filepath", file: "docs/guide.md", matchedText: "docs/guide.md" }]);
+  });
+
+  test("searches directories with glob query", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, "docs", "api"), { recursive: true });
+    await fs.mkdir(path.join(root, "src", "api"), { recursive: true });
+
+    const result = await runRequest({
+      version: 1,
+      root,
+      query: { type: "glob", text: "docs/**" },
+      search: { targets: ["directory"] },
+      output: { mode: "detail" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.matches).toEqual([{ type: "directory", path: "docs/api", matchedText: "docs/api" }]);
   });
 
   test("returns at most one detail filepath hit per path", async () => {

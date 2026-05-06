@@ -1,4 +1,5 @@
-import type { QueryType } from "./public-types.js";
+import { pathGlobMatch } from "./glob.js";
+import type { EffectiveRequest } from "./public-types.js";
 
 export type TextMatch = {
   index: number;
@@ -11,8 +12,10 @@ export type Snippet = {
   textStartColumn?: number;
 };
 
-export function findMatches(text: string, query: { type: QueryType; text: string }): TextMatch[] {
+export function findMatches(text: string, query: NonNullable<EffectiveRequest["query"]>): TextMatch[] {
+  if (query.type === "glob") return pathGlobMatch(text, query.text) ? [{ index: 0, text }] : [];
   if (query.type === "literal") {
+    if (query.case === "insensitive") return findLiteralInsensitiveMatches(text, query.text);
     const hits: TextMatch[] = [];
     let from = 0;
     while (from <= text.length) {
@@ -23,7 +26,7 @@ export function findMatches(text: string, query: { type: QueryType; text: string
     }
     return hits;
   }
-  const regex = new RegExp(query.text, "g");
+  const regex = new RegExp(query.text, query.case === "insensitive" ? "gi" : "g");
   const hits: TextMatch[] = [];
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -31,6 +34,21 @@ export function findMatches(text: string, query: { type: QueryType; text: string
     if (match[0].length === 0) regex.lastIndex += 1;
   }
   return hits;
+}
+
+function findLiteralInsensitiveMatches(text: string, queryText: string): TextMatch[] {
+  const regex = new RegExp(escapeRegExp(queryText), "gi");
+  const hits: TextMatch[] = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    hits.push({ index: match.index, text: match[0] });
+    if (match[0].length === 0) regex.lastIndex += 1;
+  }
+  return hits;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 }
 
 export function chooseRepresentativeMatch(matches: TextMatch[]): TextMatch | null {

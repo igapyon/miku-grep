@@ -7,7 +7,7 @@ import { isIgnoredByRules, loadIgnoreRulesForDirectory } from "./ignore-files.js
 import { chooseRepresentativeMatch, findMatches, makeSnippet, splitLines } from "./match-text.js";
 import { isPathInsideOrSame } from "./path-security.js";
 import { createSummary } from "./result.js";
-import { addDirectoryHit, addFileHit, buildDetailMatches, buildSummaryMatches, markTruncated } from "./search-results.js";
+import { addDirectoryHit, addFileHit, buildAgentMatches, buildDetailMatches, buildSummaryMatches, markTruncated } from "./search-results.js";
 import { compareStrings } from "./string-order.js";
 import type { SearchResult, SearchState } from "./internal-types.js";
 import type { IgnoreRule } from "./ignore-files.js";
@@ -32,7 +32,7 @@ export async function runSearch(request: EffectiveRequest, rootPath: string, dia
   };
 
   await traverse(searchState, rootPath, "", 0, []);
-  const matches = request.output.mode === "detail" ? buildDetailMatches(searchState) : buildSummaryMatches(searchState);
+  const matches = request.output.mode === "detail" ? buildDetailMatches(searchState) : request.output.mode === "agent" ? buildAgentMatches(searchState) : buildSummaryMatches(searchState);
   searchState.summary.filesMatched = searchState.summariesByFile.size;
   searchState.summary.directoriesMatched = searchState.summariesByDirectory.size;
   searchState.summary.diagnostics = diagnostics.length;
@@ -78,7 +78,7 @@ async function traverse(state: SearchState, absoluteDir: string, relativeDir: st
       state.summary.directoriesVisited += 1;
       if (hasTarget(state, "directory")) {
         state.summary.directoriesScanned += 1;
-        const hit = chooseRepresentativeMatch(findMatches(relativePath, state.request.query));
+        const hit = chooseRepresentativeMatch(findMatches(relativePath, requireQuery(state)));
         if (hit) {
           addDirectoryHit(state, relativePath, { type: "directory", path: relativePath, matchedText: hit.text });
         }
@@ -116,7 +116,7 @@ async function searchFile(state: SearchState, absolutePath: string, relativePath
   if (searchFilepath) {
     countedScanned = true;
     state.summary.filesScanned += 1;
-    const hit = chooseRepresentativeMatch(findMatches(relativePath, state.request.query));
+    const hit = chooseRepresentativeMatch(findMatches(relativePath, requireQuery(state)));
     if (hit) {
       addFileHit(state, relativePath, { type: "filepath", file: relativePath, matchedText: hit.text });
     }
@@ -173,7 +173,7 @@ async function searchFile(state: SearchState, absolutePath: string, relativePath
       markLineSkipped(state, relativePath, index + 1, line.length);
       continue;
     }
-    for (const match of findMatches(line, state.request.query)) {
+    for (const match of findMatches(line, requireQuery(state))) {
       if (fileHitCount >= state.request.output.maxMatchesPerFile) {
         markTruncated(state, "max_matches_per_file", "file search stopped because maxMatchesPerFile was reached", { file: relativePath, maxMatchesPerFile: state.request.output.maxMatchesPerFile });
         return;
@@ -242,4 +242,9 @@ async function resolveInsideRoot(state: SearchState, absolutePath: string, relat
 
 function hasTarget(state: SearchState, target: EffectiveRequest["search"]["targets"][number]): boolean {
   return state.request.search.targets.includes(target);
+}
+
+function requireQuery(state: SearchState): NonNullable<EffectiveRequest["query"]> {
+  if (!state.request.query) throw new Error("search mode requires query");
+  return state.request.query;
 }

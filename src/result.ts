@@ -1,4 +1,4 @@
-import type { DetailMatch, Diagnostic, DirectorySummaryMatch, EffectiveRequest, FileSummaryMatch, MikuGrepResult, Summary } from "./public-types.js";
+import type { AgentDirectoryMatch, AgentFileMatch, DetailMatch, Diagnostic, DirectorySummaryMatch, EffectiveRequest, FileListEntry, FileListSummary, FileSummaryMatch, MikuGrepResult, ReadfileRequestHint, Summary } from "./public-types.js";
 import { compareStrings } from "./string-order.js";
 import { VERSION } from "./validation.js";
 
@@ -24,9 +24,10 @@ export function finish(
   code: string | null,
   message: string | null,
   effectiveRequest: EffectiveRequest | Record<string, never>,
-  matches: Array<DetailMatch | FileSummaryMatch | DirectorySummaryMatch>,
+  matches: Array<DetailMatch | FileSummaryMatch | DirectorySummaryMatch | AgentFileMatch | AgentDirectoryMatch>,
   summary: Summary,
   diagnostics: Diagnostic[],
+  extra?: { files?: FileListEntry[]; fileSummary?: FileListSummary; readfileHints?: ReadfileRequestHint[] },
 ): MikuGrepResult {
   return {
     version: VERSION,
@@ -34,6 +35,9 @@ export function finish(
     error: ok ? null : { code: code ?? "invalid_request", message: message ?? "request failed" },
     effectiveRequest,
     matches,
+    ...(extra?.files ? { files: extra.files } : {}),
+    ...(extra?.fileSummary ? { fileSummary: extra.fileSummary } : {}),
+    ...(extra?.readfileHints ? { readfileHints: extra.readfileHints } : {}),
     summary: { ...summary, diagnostics: diagnostics.length },
     diagnostics: sortDiagnostics(diagnostics),
   };

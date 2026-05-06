@@ -1,16 +1,22 @@
-export type QueryType = "literal" | "regex";
+export type QueryType = "literal" | "regex" | "glob";
+export type QueryCase = "sensitive" | "insensitive";
+export type RequestMode = "search" | "listFiles";
 export type SearchTarget = "filepath" | "directory" | "content";
-export type OutputMode = "detail" | "summary";
+export type OutputMode = "detail" | "summary" | "agent";
 export type SupportedEncoding = "utf-8" | "shift_jis";
+export type EncodingPreset = "japanese-legacy";
 export type IgnoreMode = "auto" | "none";
 export type IgnoreSource = ".gitignore" | ".ignore" | ".git/info/exclude";
 
 export type MikuGrepRequest = {
   version: 1;
   root: string;
-  query: {
+  detectGitRoot?: boolean;
+  mode?: RequestMode;
+  query?: {
     type: QueryType;
     text: string;
+    case?: QueryCase;
   };
   search?: {
     targets?: SearchTarget[];
@@ -30,11 +36,13 @@ export type MikuGrepRequest = {
     maxMatchesPerFile?: number;
     maxLineLength?: number;
     maxSnippetsPerFile?: number;
+    includeReadfileRequestHints?: boolean;
     contextLines?: number;
     contextLinesBefore?: number;
     contextLinesAfter?: number;
   };
   encoding?: {
+    preset?: EncodingPreset;
     default?: SupportedEncoding;
     rules?: EncodingRuleInput[];
     onDecodeError?: "skip";
@@ -53,15 +61,20 @@ export type EncodingRuleInput = {
 };
 
 export type EncodingRuleResult = {
-  type: "pathPattern" | "fileNamePattern" | "default";
+  type: "pathPattern" | "fileNamePattern" | "preset" | "default";
   pattern?: string;
+  preset?: EncodingPreset;
 };
 
 export type EffectiveRequest = {
+  requestedRoot: string;
   root: string;
-  query: {
+  detectGitRoot: boolean;
+  mode: RequestMode;
+  query?: {
     type: QueryType;
     text: string;
+    case: QueryCase;
   };
   search: {
     targets: SearchTarget[];
@@ -81,10 +94,12 @@ export type EffectiveRequest = {
     maxMatchesPerFile: number;
     maxLineLength: number;
     maxSnippetsPerFile: number;
+    includeReadfileRequestHints: boolean;
     contextLinesBefore: number;
     contextLinesAfter: number;
   };
   encoding: {
+    preset: EncodingPreset | null;
     default: SupportedEncoding;
     rules: EncodingRuleInput[];
     onDecodeError: "skip";
@@ -177,6 +192,33 @@ export type DirectorySummaryMatch = {
   matchCount: number;
 };
 
+export type ReadRangeCandidate = {
+  startLine: number;
+  endLine: number;
+  reason: "match";
+};
+
+export type AgentFileMatch = {
+  type: "agentFile";
+  file: string;
+  targetKind: "file";
+  matchTypes: Array<"filepath" | "content">;
+  matchCount: number;
+  lines: number[];
+  representativeSnippets: FileSummaryMatch["snippets"];
+  readRanges: ReadRangeCandidate[];
+  encoding?: SupportedEncoding;
+  encodingRule?: EncodingRuleResult;
+};
+
+export type AgentDirectoryMatch = {
+  type: "agentDirectory";
+  path: string;
+  targetKind: "directory";
+  matchTypes: ["directory"];
+  matchCount: number;
+};
+
 export type Summary = {
   filesVisited: number;
   directoriesVisited: number;
@@ -192,6 +234,35 @@ export type Summary = {
   truncatedReason: string | null;
 };
 
+export type FileListEntry = {
+  path: string;
+  extension: string;
+  directory: string;
+};
+
+export type FileListSummary = {
+  files: number;
+  extensions: Array<{
+    extension: string;
+    count: number;
+  }>;
+  directories: Array<{
+    path: string;
+    count: number;
+  }>;
+};
+
+export type ReadfileRequestHint = {
+  file: string;
+  request: {
+    version: 1;
+    root: string;
+    files: Array<{
+      path: string;
+    }>;
+  };
+};
+
 export type MikuGrepResult = {
   version: 1;
   ok: boolean;
@@ -200,7 +271,10 @@ export type MikuGrepResult = {
     message: string;
   };
   effectiveRequest: EffectiveRequest | Record<string, never>;
-  matches: Array<DetailMatch | FileSummaryMatch | DirectorySummaryMatch>;
+  matches: Array<DetailMatch | FileSummaryMatch | DirectorySummaryMatch | AgentFileMatch | AgentDirectoryMatch>;
+  files?: FileListEntry[];
+  fileSummary?: FileListSummary;
+  readfileHints?: ReadfileRequestHint[];
   summary: Summary;
   diagnostics: Diagnostic[];
 };

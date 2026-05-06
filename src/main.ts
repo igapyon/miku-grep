@@ -5,12 +5,14 @@ import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { helpText } from "./help.js";
+import { runListFiles } from "./list-files.js";
 import { createSummary, finish } from "./result.js";
 import { runSearch } from "./search.js";
 import { validateAndNormalize } from "./validation.js";
 import type {
   Diagnostic,
   MikuGrepResult,
+  ReadfileRequestHint,
 } from "./public-types.js";
 
 export { helpText } from "./help.js";
@@ -22,6 +24,8 @@ export type {
   EffectiveRequest,
   EncodingRuleInput,
   EncodingRuleResult,
+  FileListEntry,
+  FileListSummary,
   FileSummaryMatch,
   IgnoreLoadedSource,
   IgnoreMode,
@@ -29,7 +33,10 @@ export type {
   MikuGrepRequest,
   MikuGrepResult,
   OutputMode,
+  QueryCase,
   QueryType,
+  ReadfileRequestHint,
+  RequestMode,
   SearchTarget,
   Summary,
   SupportedEncoding,
@@ -87,15 +94,23 @@ export async function runRequest(request: unknown): Promise<MikuGrepResult> {
   }
 
   const effectiveRequest = validation.effectiveRequest;
-  const rootPath = path.resolve(process.cwd(), effectiveRequest.root);
+  const requestedRootPath = path.resolve(process.cwd(), effectiveRequest.root);
+  const rootPath = effectiveRequest.detectGitRoot ? await detectGitRootPath(requestedRootPath) : requestedRootPath;
+  if (effectiveRequest.detectGitRoot) effectiveRequest.root = displayRoot(rootPath);
   const rootCheck = await checkRoot(rootPath, effectiveRequest.root);
   if (!rootCheck.ok) {
     diagnostics.push(rootCheck.diagnostic);
     return finish(false, rootCheck.diagnostic.code, rootCheck.diagnostic.message, effectiveRequest, [], baseSummary, diagnostics);
   }
 
+  if (effectiveRequest.mode === "listFiles") {
+    const listResult = await runListFiles(effectiveRequest, rootCheck.realPath, diagnostics);
+    return finish(true, null, null, effectiveRequest, [], listResult.summary, diagnostics, { files: listResult.files, fileSummary: listResult.fileSummary });
+  }
+
   const searchResult = await runSearch(effectiveRequest, rootCheck.realPath, diagnostics);
-  return finish(true, null, null, effectiveRequest, searchResult.matches, searchResult.summary, diagnostics);
+  const readfileHints = effectiveRequest.output.includeReadfileRequestHints ? buildReadfileHints(effectiveRequest.root, searchResult.matches) : undefined;
+  return finish(true, null, null, effectiveRequest, searchResult.matches, searchResult.summary, diagnostics, { readfileHints });
 }
 
 async function checkRoot(rootPath: string, requestRoot: string): Promise<{ ok: true; realPath: string } | { ok: false; diagnostic: Diagnostic }> {
@@ -112,6 +127,32 @@ async function checkRoot(rootPath: string, requestRoot: string): Promise<{ ok: t
     const code = isNodeError(error) && error.code === "ENOENT" ? "root_not_found" : "root_not_accessible";
     return rootError(code, code === "root_not_found" ? "root does not exist" : "root is not accessible", requestRoot);
   }
+}
+
+async function detectGitRootPath(startPath: string): Promise<string> {
+  let current = startPath;
+  try {
+    const stat = await fs.stat(current);
+    if (!stat.isDirectory()) current = path.dirname(current);
+  } catch {
+    return startPath;
+  }
+  while (true) {
+    try {
+      const gitStat = await fs.stat(path.join(current, ".git"));
+      if (gitStat.isDirectory() || gitStat.isFile()) return current;
+    } catch {
+      // Continue upward until filesystem root.
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return startPath;
+    current = parent;
+  }
+}
+
+function displayRoot(rootPath: string): string {
+  const relative = path.relative(process.cwd(), rootPath) || ".";
+  return relative.split(path.sep).join("/");
 }
 
 function rootError(code: string, message: string, pathValue: string): { ok: false; diagnostic: Diagnostic } {
@@ -141,6 +182,23 @@ async function packageVersion(): Promise<string> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function buildReadfileHints(root: string, matches: MikuGrepResult["matches"]): ReadfileRequestHint[] {
+  const files = new Set<string>();
+  for (const match of matches) {
+    if (match.type === "content" || match.type === "filepath" || match.type === "file" || match.type === "agentFile") {
+      files.add(match.file);
+    }
+  }
+  return [...files].sort().map((file) => ({
+    file,
+    request: {
+      version: 1,
+      root,
+      files: [{ path: file }],
+    },
+  }));
 }
 
 if (

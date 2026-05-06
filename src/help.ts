@@ -24,7 +24,7 @@ MINIMAL REQUEST
   {
     "version": 1,
     "root": ".",
-    "query": { "type": "literal", "text": "RepositoryMap" },
+    "query": { "type": "literal", "text": "RepositoryMap", "case": "sensitive" },
     "search": { "targets": ["content"], "recursive": true, "maxDepth": 8 }
   }
 
@@ -33,13 +33,29 @@ REQUEST FIELDS
     Search entry directory. Relative paths are resolved from current working directory.
     Result file paths are root-relative and always use "/".
 
+  detectGitRoot
+    boolean. Default: false.
+    When true, search upward from root for .git and use that directory as effective root.
+    effectiveRequest.requestedRoot keeps the input root; effectiveRequest.root is the effective root.
+
   query.type
-    "literal" or "regex".
-    literal is case-sensitive substring search.
-    regex uses Node.js RegExp, line by line for content search. Regex flags are not accepted.
+    "literal", "regex", or "glob".
+    literal is substring search.
+    regex uses Node.js RegExp, line by line for content search. Regex flags are not accepted directly.
+    glob searches root-relative file or directory paths and supports path-level "**".
 
   query.text
     Non-empty search text or regex pattern.
+
+  query.case
+    "sensitive" or "insensitive". Default: "sensitive".
+    In regex search, "insensitive" is implemented as case-insensitive matching.
+    Ignored for glob search.
+
+  mode
+    "search" or "listFiles". Default: "search".
+    "search" requires query.
+    "listFiles" returns file inventory JSON and must not specify query.
 
   search.targets
     Non-empty array of "filepath", "directory", and/or "content".
@@ -81,7 +97,8 @@ REQUEST FIELDS
     When specified, this value replaces default excludes.
 
   output.mode
-    "summary" or "detail". Default: "summary".
+    "summary", "detail", or "agent". Default: "summary".
+    "agent" returns candidate-oriented matches with read range suggestions.
 
   output.maxMatches
     Default: 200. Maximum: 10000.
@@ -96,6 +113,10 @@ REQUEST FIELDS
   output.maxSnippetsPerFile
     summary representative snippet limit. Default: 3. Maximum: 100.
 
+  output.includeReadfileRequestHints
+    boolean. Default: false.
+    When true, result.readfileHints contains minimal miku-readfile requests for matched files.
+
   output.contextLines
     detail mode only. Shorthand for contextLinesBefore and contextLinesAfter.
     Default: 0. Maximum: 20.
@@ -106,6 +127,10 @@ REQUEST FIELDS
 
   encoding.default
     "utf-8" or "shift_jis". Default: "utf-8".
+
+  encoding.preset
+    Optional. Currently "japanese-legacy".
+    Applies Shift_JIS to common Japanese legacy text file patterns after explicit rules.
 
   encoding.rules
     Array of { "pathPattern": "...", "encoding": "..." } or
@@ -140,6 +165,8 @@ RESULT SHAPE
     "error": null,
     "effectiveRequest": {},
     "matches": [],
+    "files": [],
+    "fileSummary": {},
     "summary": {
       "filesVisited": 0,
       "directoriesVisited": 0,
@@ -162,7 +189,8 @@ FULL STDIN / STDOUT EXAMPLE
     {
       "version": 1,
       "root": ".",
-      "query": { "type": "literal", "text": "RepositoryMap" },
+      "mode": "search",
+      "query": { "type": "literal", "text": "RepositoryMap", "case": "sensitive" },
       "search": {
         "targets": ["content"],
         "recursive": true,
@@ -178,8 +206,11 @@ FULL STDIN / STDOUT EXAMPLE
       "ok": true,
       "error": null,
       "effectiveRequest": {
+        "requestedRoot": ".",
         "root": ".",
-        "query": { "type": "literal", "text": "RepositoryMap" },
+        "detectGitRoot": false,
+        "mode": "search",
+        "query": { "type": "literal", "text": "RepositoryMap", "case": "sensitive" },
         "search": {
           "targets": ["content"],
           "recursive": true,
@@ -189,7 +220,7 @@ FULL STDIN / STDOUT EXAMPLE
           "excludeFileNamePatterns": ["*.class", "*.jar", "*.zip", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.pdf", ".classpath", ".project"],
           "excludeDirNamePatterns": [".git", ".svn", "node_modules", "target", "build", "dist", ".gradle", ".idea", ".vscode", ".settings", "vendor"]
         },
-        "output": { "mode": "summary", "maxMatches": 20, "maxMatchesPerFile": 20, "maxLineLength": 240, "maxSnippetsPerFile": 3, "contextLinesBefore": 0, "contextLinesAfter": 0 },
+        "output": { "mode": "summary", "maxMatches": 20, "maxMatchesPerFile": 20, "maxLineLength": 240, "maxSnippetsPerFile": 3, "includeReadfileRequestHints": false, "contextLinesBefore": 0, "contextLinesAfter": 0 },
         "encoding": { "default": "utf-8", "rules": [], "onDecodeError": "skip" },
         "ignore": { "mode": "auto", "sources": [".gitignore", ".ignore", ".git/info/exclude"], "useGlobalGitignore": false, "loadedSources": [] }
       },
@@ -253,9 +284,21 @@ SUMMARY MATCHES
   { "type": "directory", "path": "src",
     "matchTypes": ["directory"], "directoryMatched": true, "matchCount": 1 }
 
+AGENT MATCHES
+  { "type": "agentFile", "file": "src/RepositoryMap.java",
+    "targetKind": "file", "matchTypes": ["content"], "matchCount": 1,
+    "lines": [42], "representativeSnippets": [],
+    "readRanges": [{ "startLine": 37, "endLine": 47, "reason": "match" }] }
+  { "type": "agentDirectory", "path": "src",
+    "targetKind": "directory", "matchTypes": ["directory"], "matchCount": 1 }
+
+READFILE HINTS
+  { "file": "src/RepositoryMap.java",
+    "request": { "version": 1, "root": ".", "files": [{ "path": "src/RepositoryMap.java" }] } }
+
 COMMON DIAGNOSTIC CODES
   Validation / expected failures:
-    invalid_request, unknown_field, invalid_version, invalid_query_type,
+    invalid_request, unknown_field, invalid_version, invalid_mode, invalid_query_type, invalid_query_case,
     invalid_search_targets, invalid_search_target, duplicate_search_target,
     invalid_output_mode, invalid_context_lines, invalid_regex,
     regex_too_large, unsafe_regex,
@@ -265,7 +308,7 @@ COMMON DIAGNOSTIC CODES
     max_line_length_too_large, max_snippets_per_file_too_large,
     context_lines_too_large,
     max_file_bytes_too_large, max_line_chars_too_large, max_files_visited_too_large,
-    max_directories_visited_too_large, invalid_encoding, invalid_encoding_rule
+    max_directories_visited_too_large, invalid_encoding, invalid_encoding_preset, invalid_encoding_rule
   Runtime diagnostics:
     directory_not_readable, symlink_skipped, file_not_readable,
     max_file_bytes_exceeded, binary_file_skipped, decode_error,
@@ -277,6 +320,24 @@ COMMON DIAGNOSTIC CODES
 EXAMPLES
   Content search:
     printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"TODO"},"search":{"targets":["content"]}}' | miku-grep
+
+  Case-insensitive content search:
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"repositorymap","case":"insensitive"},"search":{"targets":["content"]}}' | miku-grep
+
+  File inventory:
+    printf '%s\\n' '{"version":1,"root":".","mode":"listFiles"}' | miku-grep
+
+  Glob path search:
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"glob","text":"**/*.md"},"search":{"targets":["filepath"]}}' | miku-grep
+
+  Agent summary:
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"RepositoryMap"},"output":{"mode":"agent"}}' | miku-grep
+
+  Search with readfile hints:
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"RepositoryMap"},"output":{"includeReadfileRequestHints":true}}' | miku-grep
+
+  Japanese legacy encoding preset:
+    printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"検索語"},"encoding":{"preset":"japanese-legacy"}}' | miku-grep
 
   Find-like path search:
     printf '%s\\n' '{"version":1,"root":".","query":{"type":"regex","text":"Repository|docs"},"search":{"targets":["filepath","directory"]},"output":{"mode":"detail"}}' | miku-grep

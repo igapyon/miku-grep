@@ -15,7 +15,11 @@ describe("miku-grep request validation", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(Object.keys(result.effectiveRequest)).toEqual(["root", "query", "search", "output", "encoding", "ignore"]);
+    expect(Object.keys(result.effectiveRequest)).toEqual(["requestedRoot", "root", "detectGitRoot", "mode", "query", "search", "output", "encoding", "ignore"]);
+    expect(result.effectiveRequest.requestedRoot).toBe(root);
+    expect(result.effectiveRequest.root).toBe(root);
+    expect(result.effectiveRequest.detectGitRoot).toBe(false);
+    expect(result.effectiveRequest.mode).toBe("search");
     expect(Object.keys(result.effectiveRequest.search)).toEqual([
       "targets",
       "recursive",
@@ -34,11 +38,13 @@ describe("miku-grep request validation", () => {
       "maxMatchesPerFile",
       "maxLineLength",
       "maxSnippetsPerFile",
+      "includeReadfileRequestHints",
       "contextLinesBefore",
       "contextLinesAfter",
     ]);
-    expect(Object.keys(result.effectiveRequest.encoding)).toEqual(["default", "rules", "onDecodeError"]);
+    expect(Object.keys(result.effectiveRequest.encoding)).toEqual(["preset", "default", "rules", "onDecodeError"]);
     expect(Object.keys(result.effectiveRequest.ignore)).toEqual(["mode", "sources", "useGlobalGitignore", "loadedSources"]);
+    expect(result.effectiveRequest.query).toEqual({ type: "literal", text: "RepositoryMap", case: "sensitive" });
     expect(result.effectiveRequest.search).toMatchObject({
       targets: ["content"],
       recursive: true,
@@ -61,10 +67,11 @@ describe("miku-grep request validation", () => {
       maxMatchesPerFile: 20,
       maxLineLength: 240,
       maxSnippetsPerFile: 3,
+      includeReadfileRequestHints: false,
       contextLinesBefore: 0,
       contextLinesAfter: 0,
     });
-    expect(result.effectiveRequest.encoding).toEqual({ default: "utf-8", rules: [], onDecodeError: "skip" });
+    expect(result.effectiveRequest.encoding).toEqual({ preset: null, default: "utf-8", rules: [], onDecodeError: "skip" });
     expect(result.effectiveRequest.ignore).toEqual({
       mode: "auto",
       sources: [".gitignore", ".ignore", ".git/info/exclude"],
@@ -174,6 +181,30 @@ describe("miku-grep request validation", () => {
     expect(result.diagnostics[0]).toMatchObject({ severity: "error", code: "root_not_found" });
   });
 
+  test("can detect git root from a subdirectory", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "miku-grep-test-"));
+    await fs.mkdir(path.join(root, ".git"), { recursive: true });
+    await fs.mkdir(path.join(root, "packages", "app"), { recursive: true });
+    await fs.writeFile(path.join(root, "README.md"), "RepositoryMap\n", "utf8");
+    await fs.writeFile(path.join(root, "packages", "app", "local.txt"), "RepositoryMap\n", "utf8");
+    const requestedRoot = path.join(root, "packages", "app");
+    const expectedEffectiveRoot = (path.relative(process.cwd(), root) || ".").split(path.sep).join("/");
+
+    const result = await runRequest({
+      version: 1,
+      root: requestedRoot,
+      detectGitRoot: true,
+      query: { type: "literal", text: "RepositoryMap" },
+      search: { targets: ["content"] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.effectiveRequest.requestedRoot).toBe(requestedRoot);
+    expect(result.effectiveRequest.root).toBe(expectedEffectiveRoot);
+    expect(result.effectiveRequest.detectGitRoot).toBe(true);
+    expect(result.matches.map((match) => match.file)).toEqual(["README.md", "packages/app/local.txt"]);
+  });
+
   test("rejects invalid regex and numeric limits", async () => {
     const root = await fixture();
     const invalidRegex = await runRequest({
@@ -221,7 +252,10 @@ describe("miku-grep request validation", () => {
 
   test.each([
     ["invalid_version", (root: string) => ({ ...baseRequest(root), version: 2 })],
-    ["invalid_query_type", (root: string) => ({ ...baseRequest(root), query: { type: "glob", text: "RepositoryMap" } })],
+    ["invalid_mode", (root: string) => ({ ...baseRequest(root), mode: "inventory" })],
+    ["invalid_search_target", (root: string) => ({ ...baseRequest(root), query: { type: "glob", text: "**/*.md" } })],
+    ["invalid_query_type", (root: string) => ({ version: 1, root, mode: "listFiles", query: { type: "literal", text: "RepositoryMap" } })],
+    ["invalid_query_case", (root: string) => ({ ...baseRequest(root), query: { type: "literal", text: "RepositoryMap", case: "ignore" } })],
     ["invalid_search_target", (root: string) => ({ ...baseRequest(root), search: { targets: ["path"] } })],
     ["duplicate_search_target", (root: string) => ({ ...baseRequest(root), search: { targets: ["content", "content"] } })],
     ["invalid_output_mode", (root: string) => ({ ...baseRequest(root), output: { mode: "raw" } })],
@@ -236,8 +270,10 @@ describe("miku-grep request validation", () => {
     ["context_lines_too_large", (root: string) => ({ ...baseRequest(root), output: { mode: "detail", contextLines: 21 } })],
     ["invalid_context_lines", (root: string) => ({ ...baseRequest(root), output: { mode: "detail", contextLines: 1, contextLinesBefore: 1 } })],
     ["invalid_context_lines", (root: string) => ({ ...baseRequest(root), output: { mode: "summary", contextLines: 1 } })],
+    ["invalid_context_lines", (root: string) => ({ ...baseRequest(root), output: { mode: "agent", contextLines: 1 } })],
     ["max_file_bytes_too_large", (root: string) => ({ ...baseRequest(root), search: { maxFileBytes: 104857601 } })],
     ["invalid_encoding", (root: string) => ({ ...baseRequest(root), encoding: { default: "euc-jp" } })],
+    ["invalid_encoding_preset", (root: string) => ({ ...baseRequest(root), encoding: { preset: "auto" } })],
     ["invalid_encoding_rule", (root: string) => ({ ...baseRequest(root), encoding: { rules: [{ fileNamePattern: "*.txt", encoding: "euc-jp" }] } })],
     ["invalid_ignore_mode", (root: string) => ({ ...baseRequest(root), ignore: { mode: "always" } })],
     ["invalid_ignore_sources", (root: string) => ({ ...baseRequest(root), ignore: { sources: ".gitignore" } })],
