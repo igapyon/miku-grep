@@ -11,8 +11,11 @@ import { runSearch } from "./search.js";
 import { validateAndNormalize } from "./validation.js";
 import type {
   Diagnostic,
+  MikuGrepRequest,
   MikuGrepResult,
   ReadfileRequestHint,
+  SearchTarget,
+  SupportedEncoding,
 } from "./public-types.js";
 
 export { helpText } from "./help.js";
@@ -46,21 +49,31 @@ export type {
 
 export async function main(argv = process.argv, stdin = process.stdin, stdout = process.stdout, stderr = process.stderr): Promise<number> {
   try {
-    if (argv.length === 3 && argv[2] === "--version") {
+    const args = argv.slice(2);
+    if (args.length === 1 && args[0] === "--version") {
       stdout.write(`miku-grep ${await packageVersion()}\n`);
       return 0;
     }
-    if (argv.length === 3 && (argv[2] === "--help" || argv[2] === "-h")) {
+    if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
       stdout.write(helpText());
       return 0;
     }
-    if (argv.length === 3 && argv[2]?.startsWith("-")) {
-      stderr.write("usage: miku-grep [--version|--help]\n");
-      return 2;
-    }
-    if (argv.length > 2) {
-      stderr.write("usage: miku-grep [--version|--help]\n");
-      return 2;
+
+    if (args.length > 0) {
+      const parsed = parseArgs(args);
+      if (!parsed.ok) {
+        stderr.write(`${parsed.message}\nusage: miku-grep QUERY [ROOT] [--agent|--files|--context N|--format json]\n`);
+        return 2;
+      }
+      const result = await runRequest(parsed.request);
+      if (parsed.format === "json") {
+        stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else if (result.ok) {
+        stdout.write(formatTextResult(result, parsed.textMode));
+      } else {
+        stderr.write(formatTextError(result));
+      }
+      return result.ok ? 0 : 1;
     }
 
     let request: unknown;
@@ -78,6 +91,229 @@ export async function main(argv = process.argv, stdin = process.stdin, stdout = 
     stderr.write(`unexpected runtime error: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
     return 3;
   }
+}
+
+type CliTextMode = "summary" | "agent" | "files";
+
+type ParsedArgs =
+  | { ok: true; request: MikuGrepRequest; format: "text" | "json"; textMode: CliTextMode }
+  | { ok: false; message: string };
+
+function parseArgs(args: string[]): ParsedArgs {
+  const positionals: string[] = [];
+  const request: MikuGrepRequest = {
+    version: 1,
+    root: ".",
+    query: { type: "literal", text: "" },
+    search: { targets: ["content"] },
+    output: { mode: "summary" },
+  };
+  let format: "text" | "json" = "text";
+  let textMode: CliTextMode = "summary";
+  let filesMode = false;
+  let filesOptionIndex = -1;
+  let firstPositionalIndex = -1;
+  let agentMode = false;
+  let contextMode = false;
+  let topFilesMode = false;
+  let regexMode = false;
+  let globMode = false;
+  let pathMode = false;
+  let allTargetsMode = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--format") {
+      const value = args[++i];
+      if (value !== "text" && value !== "json") return { ok: false, message: "--format must be text or json" };
+      format = value;
+    } else if (arg === "--json") {
+      format = "json";
+    } else if (arg === "--agent") {
+      request.output = { ...request.output, mode: "agent", sort: "relevance", includeReadfileRequestHints: true };
+      textMode = "agent";
+      agentMode = true;
+    } else if (arg === "--files") {
+      filesMode = true;
+      filesOptionIndex = i;
+      textMode = "files";
+    } else if (arg === "--context") {
+      const value = parseNonNegativeInteger(args[++i], "--context");
+      if (!value.ok) return value;
+      request.output = { ...request.output, mode: "detail", contextLines: value.value };
+      contextMode = true;
+    } else if (arg === "--limit") {
+      const value = parsePositiveInteger(args[++i], "--limit");
+      if (!value.ok) return value;
+      request.output = { ...request.output, maxMatches: value.value };
+    } else if (arg === "--top-files") {
+      const value = parsePositiveInteger(args[++i], "--top-files");
+      if (!value.ok) return value;
+      request.output = { ...request.output, maxMatches: value.value, mode: "agent", sort: "relevance" };
+      textMode = "agent";
+      topFilesMode = true;
+    } else if (arg === "--encoding") {
+      const value = args[++i];
+      if (value !== "utf-8" && value !== "shift_jis") return { ok: false, message: "--encoding must be utf-8 or shift_jis" };
+      request.encoding = { ...request.encoding, default: value as SupportedEncoding };
+    } else if (arg === "--encoding-preset") {
+      const value = args[++i];
+      if (value !== "japanese-legacy") return { ok: false, message: "--encoding-preset must be japanese-legacy" };
+      request.encoding = { ...request.encoding, preset: value };
+    } else if (arg === "--ignore-case" || arg === "-i") {
+      request.query = { type: "literal", text: "", ...request.query, case: "insensitive" };
+    } else if (arg === "--regex") {
+      const currentQuery = request.query ?? { type: "literal", text: "" };
+      request.query = { ...currentQuery, type: "regex" };
+      regexMode = true;
+    } else if (arg === "--glob") {
+      const currentQuery = request.query ?? { type: "literal", text: "" };
+      request.query = { ...currentQuery, type: "glob" };
+      request.search = { ...request.search, targets: ["filepath"] };
+      globMode = true;
+    } else if (arg === "--path") {
+      request.search = { ...request.search, targets: ["filepath"] };
+      pathMode = true;
+    } else if (arg === "--all-targets") {
+      request.search = { ...request.search, targets: ["filepath", "directory", "content"] };
+      allTargetsMode = true;
+    } else if (arg === "--detect-git-root") {
+      request.detectGitRoot = true;
+    } else if (arg === "--no-ignore") {
+      request.ignore = { mode: "none" };
+    } else if (arg.startsWith("-")) {
+      return { ok: false, message: `unknown option: ${arg}` };
+    } else {
+      if (firstPositionalIndex < 0) firstPositionalIndex = i;
+      positionals.push(arg);
+    }
+  }
+
+  const modeConflict = [filesMode, agentMode || topFilesMode, contextMode].filter(Boolean).length > 1;
+  if (modeConflict) return { ok: false, message: "--files, --agent/--top-files, and --context are mutually exclusive" };
+  if (regexMode && globMode) return { ok: false, message: "--regex and --glob are mutually exclusive" };
+  if (pathMode && allTargetsMode) return { ok: false, message: "--path and --all-targets are mutually exclusive" };
+  if (globMode && allTargetsMode) return { ok: false, message: "--glob and --all-targets are mutually exclusive" };
+
+  const filesInventoryMode = filesMode && (positionals.length === 0 || (positionals.length === 1 && filesOptionIndex >= 0 && filesOptionIndex < firstPositionalIndex));
+  if (filesInventoryMode) {
+    delete request.query;
+    request.mode = "listFiles";
+    request.root = positionals[0] ?? ".";
+    return { ok: true, request, format, textMode };
+  }
+
+  if (positionals.length < 1 || positionals.length > 2) {
+    return { ok: false, message: "expected QUERY [ROOT]" };
+  }
+
+  request.query = { type: "literal", case: "sensitive", ...request.query, text: positionals[0] };
+  request.root = positionals[1] ?? ".";
+  if (filesMode) {
+    request.output = { ...request.output, mode: "summary" };
+    request.search = { ...request.search, targets: ensureFileTargets(request.search?.targets) };
+  }
+  return { ok: true, request, format, textMode };
+}
+
+function parsePositiveInteger(value: string | undefined, option: string): { ok: true; value: number } | { ok: false; message: string } {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return { ok: false, message: `${option} requires a positive integer` };
+  return { ok: true, value: parsed };
+}
+
+function parseNonNegativeInteger(value: string | undefined, option: string): { ok: true; value: number } | { ok: false; message: string } {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) return { ok: false, message: `${option} requires a non-negative integer` };
+  return { ok: true, value: parsed };
+}
+
+function ensureFileTargets(targets: SearchTarget[] | undefined): SearchTarget[] {
+  if (!targets || targets.length === 0) return ["content"];
+  return targets.filter((target) => target !== "directory");
+}
+
+function formatTextResult(result: MikuGrepResult, mode: CliTextMode): string {
+  if (mode === "files") return formatFilesText(result);
+  if (mode === "agent") return formatAgentText(result);
+  if (result.effectiveRequest.mode === "listFiles") return formatFilesText(result);
+  return formatSummaryText(result);
+}
+
+function formatFilesText(result: MikuGrepResult): string {
+  const files = result.files && result.files.length > 0 ? result.files.map((file) => file.path) : uniqueFiles(result);
+  return files.length > 0 ? `${files.join("\n")}\n` : "";
+}
+
+function formatSummaryText(result: MikuGrepResult): string {
+  const lines = [
+    `matches: ${result.summary.matches}`,
+    `files: ${result.summary.filesMatched}`,
+  ];
+  if (result.summary.directoriesMatched > 0) lines.push(`directories: ${result.summary.directoriesMatched}`);
+  if (result.summary.truncated) lines.push(`truncated: ${result.summary.truncatedReason ?? "true"}`);
+  if (result.diagnostics.length > 0) lines.push(`diagnostics: ${result.diagnostics.length}`);
+  lines.push("");
+
+  for (const match of result.matches.slice(0, 20)) {
+    if (match.type === "file") {
+      lines.push(`${match.file}  ${match.matchCount} match${match.matchCount === 1 ? "" : "es"}`);
+      for (const snippet of match.snippets.slice(0, 3)) lines.push(`  ${snippet.line}: ${snippet.text}`);
+    } else if (match.type === "content") {
+      lines.push(`${match.file}:${match.line}:${match.column}: ${match.text}`);
+      for (const context of match.contextBefore ?? []) lines.push(`  ${context.line}- ${context.text}`);
+      for (const context of match.contextAfter ?? []) lines.push(`  ${context.line}+ ${context.text}`);
+    } else if (match.type === "filepath") {
+      lines.push(match.file);
+    } else if (match.type === "directory") {
+      lines.push(`${match.path}/`);
+    } else if (match.type === "agentFile") {
+      lines.push(`${match.file}  ${match.matchCount} match${match.matchCount === 1 ? "" : "es"}`);
+    } else if (match.type === "agentDirectory") {
+      lines.push(`${match.path}/  ${match.matchCount} match${match.matchCount === 1 ? "" : "es"}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatAgentText(result: MikuGrepResult): string {
+  const lines = [
+    `matches: ${result.summary.matches}`,
+    `files: ${result.summary.filesMatched}`,
+  ];
+  if (result.summary.truncated) lines.push(`truncated: ${result.summary.truncatedReason ?? "true"}`);
+  lines.push("", "top files:");
+
+  const agentFiles = result.matches.filter((match) => match.type === "agentFile");
+  for (const match of agentFiles.slice(0, 10)) {
+    if (match.type !== "agentFile") continue;
+    lines.push(`  ${match.file}  ${match.matchCount} match${match.matchCount === 1 ? "" : "es"}`);
+    for (const snippet of match.representativeSnippets.slice(0, 2)) lines.push(`    ${snippet.line}: ${snippet.text}`);
+  }
+
+  const readRanges = agentFiles
+    .flatMap((match) => (match.type === "agentFile" ? match.readRanges.slice(0, 1).map((range) => `${match.file}:${range.startLine}-${range.endLine}`) : []))
+    .slice(0, 10);
+  if (readRanges.length > 0) {
+    lines.push("", "next reads:");
+    for (const range of readRanges) lines.push(`  ${range}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatTextError(result: MikuGrepResult): string {
+  const error = result.error;
+  const lines = [`error: ${error?.code ?? "unknown"}${error?.message ? `: ${error.message}` : ""}`];
+  for (const diagnostic of result.diagnostics.slice(0, 5)) lines.push(`${diagnostic.severity}: ${diagnostic.code}: ${diagnostic.message}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function uniqueFiles(result: MikuGrepResult): string[] {
+  const files = new Set<string>();
+  for (const match of result.matches) {
+    if (match.type === "file" || match.type === "filepath" || match.type === "content" || match.type === "agentFile") files.add(match.file);
+  }
+  return [...files].sort();
 }
 
 export async function runRequest(request: unknown): Promise<MikuGrepResult> {

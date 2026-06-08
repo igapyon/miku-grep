@@ -4,7 +4,7 @@
 
 `miku-grep` is a local-first repository search CLI for generative AI agents and automation.
 
-The tool is a grep replacement focused on finding files and snippets that an agent should read next. It returns structured JSON, diagnostics, and summaries instead of human-oriented plain text.
+The tool is a grep replacement focused on finding files and snippets that an agent should read next. Its default argument interface returns human-readable text so agents can try it quickly. It also returns structured JSON, diagnostics, and summaries when `--format json` or stdin request JSON is used.
 
 `miku-grep` is not a semantic retrieve tool. It does not perform embedding
 search or ranking by meaning.
@@ -22,6 +22,8 @@ MVP scope:
 
 - Node CLI
 - `--version`
+- args-first text search
+- `--format json`
 - stdin JSON request
 - stdout JSON result
 - `filepath` / `directory` / `content`
@@ -42,7 +44,25 @@ Out of scope for MVP:
 
 ## CLI Contract
 
-The CLI uses stdin / stdout as its primary interface.
+The CLI has two supported interfaces.
+
+The first interface is args-first and text by default:
+
+```bash
+miku-grep TODO .
+miku-grep TODO . --context 2
+miku-grep TODO . --files
+miku-grep TODO . --agent
+miku-grep TODO . --format json
+miku-grep --files .
+```
+
+When query arguments are provided, stdout contains text unless `--format json`
+is specified. The text format is intended for humans and AI agents in an
+interactive exploration loop. It is stable enough to read, but JSON remains the
+machine contract.
+
+The second interface is stdin request JSON:
 
 ```text
 stdin
@@ -56,9 +76,9 @@ stderr
   progress, verbose logs, unexpected runtime-level messages
 ```
 
-stdout must not contain progress or verbose logs. Agents and scripts should be able to parse stdout as JSON.
+stdout must not contain progress or verbose logs. Agents and scripts should be able to parse stdout as JSON when `--format json` or stdin request JSON is used.
 
-Request validation errors, dangerous requests, decode errors, skips, truncation, and expected search failures are represented in stdout result JSON.
+In JSON mode, request validation errors, dangerous requests, decode errors, skips, truncation, and expected search failures are represented in stdout result JSON.
 
 stdout result JSON should be pretty-printed with 2-space indentation and a trailing newline.
 
@@ -66,7 +86,7 @@ stdout result JSON should be pretty-printed with 2-space indentation and a trail
 JSON.stringify(result, null, 2) + "\n"
 ```
 
-`--version` and `--help` are exceptions to the stdin request JSON contract.
+`--version` and `--help` are metadata commands.
 
 ```bash
 miku-grep --version
@@ -77,8 +97,9 @@ miku-grep --help
 
 `--help` prints a self-contained command description to stdout and exits with code `0`.
 The help output should be detailed enough for an AI agent to understand the
-stdin / stdout contract, request fields, defaults, limits, result shape,
-diagnostics, and examples without reading the full specification.
+short argument interface, stdin / stdout JSON contract, request fields,
+defaults, limits, result shape, diagnostics, and examples without reading the
+full specification.
 
 These commands exist so release assets and Agent Skills can inspect or smoke-test
 a runtime artifact without preparing a request JSON.
