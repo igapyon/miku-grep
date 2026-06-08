@@ -2,6 +2,15 @@
 
 ## next specification candidates
 
+- [x] args-first + text default CLI 入口を仕様検討・実装する
+  - 優先度: 最優先。AI agent が `rg` の近くにある道具として短く試せるようにする。
+  - 背景: JSON stdin / stdout は機械処理には有効だが、最初の探索ループでは request JSON を組み立てる負荷が高い。
+  - 実装: `miku-grep QUERY [ROOT]` を追加し、既定では text output とする。
+  - 実装: `--format json` は既存 result JSON を返し、引数なしは従来どおり stdin request JSON を受け取る。
+  - 実装: `--agent`, `--files`, `--context`, `--limit`, `--top-files`, `--encoding`, `--encoding-preset`, `--ignore-case`, `--regex`, `--glob`, `--path`, `--all-targets`, `--detect-git-root`, `--no-ignore` を内部 request shape へ変換する薄い CLI adapter として追加する。
+  - 実装: 表示 mode、query mode、target mode の曖昧な同時指定は parser で明示的に usage error とする。
+  - 関連: `src/main.ts`, `src/help.ts`, `README.md`, `docs/miku-grep-cli-spec.md`
+
 - [x] AI agent 向け検索フロー強化を前向きに仕様検討・実装する
   - 優先度: 最優先候補。`miku-grep` を「検索して終わり」ではなく、「探す」「候補を絞る」「次に読む file を選ぶ」流れまで支える tool として強化する。
   - 前提: 現時点ではユーザー数が少ないため、下方互換性よりも agent が生成しやすい request JSON と読みやすい result JSON を優先してよい。

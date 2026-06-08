@@ -1,18 +1,100 @@
 export function helpText(): string {
-  return `miku-grep - local-first structured grep CLI for AI agents and automation
+  return `miku-grep - local-first grep CLI for AI agents and automation
 
 USAGE
+  miku-grep QUERY [ROOT]
+  miku-grep QUERY [ROOT] --agent
+  miku-grep QUERY [ROOT] --files
+  miku-grep QUERY [ROOT] --context N
+  miku-grep QUERY [ROOT] --format json
+  miku-grep --files [ROOT]
   miku-grep < request.json > result.json
   miku-grep --version
   miku-grep --help
 
+QUICK EXAMPLES
+  miku-grep TODO .
+  miku-grep TODO . --context 2
+  miku-grep TODO . --files
+  miku-grep TODO . --agent
+  miku-grep TODO . --format json
+  miku-grep TODO . --encoding shift_jis
+  miku-grep --files .
+
+WHEN TO USE
+  Use miku-grep when you would normally reach for rg, but want a small
+  agent-friendly next step:
+    - matching files only:        miku-grep TODO . --files
+    - first readable summary:     miku-grep TODO .
+    - nearby context:             miku-grep TODO . --context 2
+    - next-read candidates:       miku-grep TODO . --agent
+    - machine-readable result:    miku-grep TODO . --format json
+    - legacy Japanese text:       miku-grep 検索語 . --encoding shift_jis
+
 CONTRACT
-  Primary input is stdin JSON. Primary output is stdout JSON.
-  stdout is reserved for result JSON except --version and --help.
+  With QUERY arguments, default output is human-readable text.
+  Use --format json for structured result JSON.
+  With no arguments, stdin JSON is still accepted and stdout is result JSON.
   stderr is for usage errors, malformed stdin, progress, verbose logs, and unexpected runtime messages.
   Request JSON and result JSON use top-level "version": 1.
   Unknown request fields are validation errors.
   Result JSON is pretty-printed with 2-space indentation and a trailing newline.
+
+ARGUMENT OPTIONS
+  --agent
+    Return a compact next-read summary in text mode.
+    In JSON mode, maps to output.mode "agent", relevance sort, and readfile hints.
+
+  --files
+    With QUERY, print matching file paths.
+    Without QUERY, list files under ROOT like an agent-readable rg --files entry point.
+
+  --context N
+    Show N lines of context around content hits. Maps to output.mode "detail".
+
+  --limit N
+    Limit returned matches.
+
+  --top-files N
+    Return agent-oriented top file candidates.
+
+  --format text|json
+    Default for QUERY arguments is text. Use json for machine-readable output.
+
+  --encoding utf-8|shift_jis
+    Decode content with the selected default encoding.
+
+  --encoding-preset japanese-legacy
+    Apply Shift_JIS to common Japanese legacy text file patterns.
+
+  --ignore-case, -i
+    Case-insensitive query.
+
+  --regex
+    Treat QUERY as a regular expression.
+
+  --glob
+    Treat QUERY as a path glob and search file paths.
+
+  --path
+    Search file paths instead of file content.
+
+  --all-targets
+    Search file paths, directory paths, and content.
+
+  --detect-git-root
+    Search upward from ROOT for .git and use that directory as effective root.
+
+  --no-ignore
+    Disable ignore file handling.
+
+OPTION COMBINATIONS
+  --files, --agent/--top-files, and --context are mutually exclusive output modes.
+  --regex and --glob are mutually exclusive query modes.
+  --path and --all-targets are mutually exclusive target modes.
+  --glob implies file path search and cannot be combined with --all-targets.
+  Use miku-grep --files . for inventory.
+  Use miku-grep TODO --files or miku-grep TODO . --files for matching files.
 
 EXIT CODES
   0  ok: true, or explicit meta command such as --version / --help
@@ -321,7 +403,32 @@ COMMON DIAGNOSTIC CODES
     max_snippets_per_file, max_line_chars_exceeded,
     max_files_visited, max_directories_visited
 
-EXAMPLES
+ARGUMENT EXAMPLES
+  Content search:
+    miku-grep TODO .
+
+  Case-insensitive content search:
+    miku-grep repositorymap . --ignore-case
+
+  Matching files only:
+    miku-grep TODO . --files
+
+  File inventory:
+    miku-grep --files .
+
+  Context lines:
+    miku-grep TODO . --context 2
+
+  Agent next-read summary:
+    miku-grep RepositoryMap . --agent
+
+  JSON output:
+    miku-grep TODO . --format json
+
+  Japanese legacy encoding:
+    miku-grep 検索語 . --encoding shift_jis
+
+JSON EXAMPLES
   Content search:
     printf '%s\\n' '{"version":1,"root":".","query":{"type":"literal","text":"TODO"},"search":{"targets":["content"]}}' | miku-grep
 

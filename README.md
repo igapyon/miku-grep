@@ -2,7 +2,7 @@
 
 `miku-grep` は、生成AI agent と automation が repository やディレクトリ内で「読むべきファイル」を見つけるための local-first 検索 CLI です。
 
-通常の `grep` の代わりに、検索結果、summary、diagnostics を JSON として返します。人間が画面で読む検索結果ではなく、次の処理に渡しやすい structured result を得るための tool です。
+短い `grep` 風の引数で検索でき、既定では画面で読みやすい text を返します。機械処理や script 連携が必要な場合は `--format json` または stdin request JSON で、検索結果、summary、diagnostics を structured result として受け取れます。
 
 厳格な CLI / JSON 仕様は [docs/miku-grep-cli-spec.md](docs/miku-grep-cli-spec.md) を参照してください。
 
@@ -27,7 +27,29 @@ AI agent が「探す」「候補を絞る」「次に読む file を選ぶ」�
 
 ## すぐ使う
 
-stdin で request JSON を渡し、stdout から result JSON を受け取ります。
+まずは短い引数で検索できます。既定の出力は text です。
+
+```bash
+miku-grep TODO .
+miku-grep TODO . --context 2
+miku-grep TODO . --files
+miku-grep TODO . --agent
+miku-grep TODO . --encoding shift_jis
+```
+
+JSON が必要な場合は `--format json` を指定します。
+
+```bash
+miku-grep TODO . --format json
+```
+
+file inventory は `--files` だけで取得できます。
+
+```bash
+miku-grep --files .
+```
+
+stdin で request JSON を渡し、stdout から result JSON を受け取る詳細入口も利用できます。
 
 ```bash
 miku-grep < request.json > result.json
@@ -60,7 +82,7 @@ miku-grep --version
 miku-grep --help
 ```
 
-`--help` は、生成AI agent や automation が request JSON を組み立てるために必要な stdin / stdout contract、request field、default、result shape、diagnostics、例を stdout に出力します。
+`--help` は、短い引数の使い方、JSON request の contract、request field、default、result shape、diagnostics、例を stdout に出力します。
 
 ## よく使う request
 

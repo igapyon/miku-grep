@@ -9,6 +9,12 @@ describe("miku-grep CLI meta and stdio contract", () => {
     const text = helpText();
 
     expect(text).toContain("USAGE");
+    expect(text).toContain("QUICK EXAMPLES");
+    expect(text).toContain("miku-grep TODO .");
+    expect(text).toContain("WHEN TO USE");
+    expect(text).toContain("ARGUMENT OPTIONS");
+    expect(text).toContain("ARGUMENT EXAMPLES");
+    expect(text).toContain("JSON EXAMPLES");
     expect(text).toContain("MINIMAL REQUEST");
     expect(text).toContain("REQUEST FIELDS");
     expect(text).toContain("RESULT SHAPE");
@@ -29,8 +35,65 @@ describe("miku-grep CLI meta and stdio contract", () => {
 
     expect(code).toBe(0);
     expect(stderr.output()).toBe("");
-    expect(stdout.output()).toContain("miku-grep - local-first structured grep CLI");
+    expect(stdout.output()).toContain("miku-grep - local-first grep CLI");
+    expect(stdout.output()).toContain("QUICK EXAMPLES");
     expect(stdout.output()).toContain("MINIMAL REQUEST");
+  });
+
+  test("main returns text output for args-first search by default", async () => {
+    const root = await fixture();
+    const stdout = writableCapture();
+    const stderr = writableCapture();
+    const code = await main(["node", "miku-grep", "RepositoryMap", root], Readable.from([]), stdout.stream, stderr.stream);
+
+    expect(code).toBe(0);
+    expect(stderr.output()).toBe("");
+    expect(stdout.output()).toContain("matches:");
+    expect(stdout.output()).toContain("README.md");
+    expect(() => JSON.parse(stdout.output())).toThrow();
+  });
+
+  test("main returns JSON output for args-first search with --format json", async () => {
+    const root = await fixture();
+    const stdout = writableCapture();
+    const stderr = writableCapture();
+    const code = await main(["node", "miku-grep", "RepositoryMap", root, "--format", "json"], Readable.from([]), stdout.stream, stderr.stream);
+
+    expect(code).toBe(0);
+    expect(stderr.output()).toBe("");
+    expect(JSON.parse(stdout.output())).toMatchObject({ version: 1, ok: true });
+  });
+
+  test("main prints matching file paths for args-first --files", async () => {
+    const root = await fixture();
+    const stdout = writableCapture();
+    const stderr = writableCapture();
+    const code = await main(["node", "miku-grep", "RepositoryMap", root, "--files"], Readable.from([]), stdout.stream, stderr.stream);
+
+    expect(code).toBe(0);
+    expect(stderr.output()).toBe("");
+    expect(stdout.output().split("\n")).toEqual(expect.arrayContaining(["README.md", "src/RepositoryMap.java"]));
+  });
+
+  test("main treats QUERY --files as matching files in the current root", async () => {
+    const stdout = writableCapture();
+    const stderr = writableCapture();
+    const code = await main(["node", "miku-grep", "RepositoryMap", "--files"], Readable.from([]), stdout.stream, stderr.stream);
+
+    expect(code).toBe(0);
+    expect(stderr.output()).toBe("");
+    expect(stdout.output()).toContain("README.md");
+  });
+
+  test("main lists inventory for --files without query", async () => {
+    const root = await fixture();
+    const stdout = writableCapture();
+    const stderr = writableCapture();
+    const code = await main(["node", "miku-grep", "--files", root], Readable.from([]), stdout.stream, stderr.stream);
+
+    expect(code).toBe(0);
+    expect(stderr.output()).toBe("");
+    expect(stdout.output().split("\n")).toEqual(expect.arrayContaining(["README.md", "src/RepositoryMap.java", "src/legacy.txt"]));
   });
 
   test("main returns exit 0 and stdout JSON for valid requests", async () => {
@@ -86,7 +149,37 @@ describe("miku-grep CLI meta and stdio contract", () => {
 
     expect(code).toBe(2);
     expect(stdout.output()).toBe("");
-    expect(stderr.output()).toContain("usage: miku-grep [--version|--help]");
+    expect(stderr.output()).toContain("usage: miku-grep QUERY [ROOT]");
+  });
+
+  test("main rejects mutually exclusive args-first output modes", async () => {
+    const root = await fixture();
+    const stdout = writableCapture();
+    const stderr = writableCapture();
+    const code = await main(["node", "miku-grep", "RepositoryMap", root, "--agent", "--context", "2"], Readable.from([]), stdout.stream, stderr.stream);
+
+    expect(code).toBe(2);
+    expect(stdout.output()).toBe("");
+    expect(stderr.output()).toContain("mutually exclusive");
+  });
+
+  test("main rejects mutually exclusive args-first query and target modes", async () => {
+    const root = await fixture();
+    const regexGlobStdout = writableCapture();
+    const regexGlobStderr = writableCapture();
+    const regexGlobCode = await main(["node", "miku-grep", "RepositoryMap", root, "--regex", "--glob"], Readable.from([]), regexGlobStdout.stream, regexGlobStderr.stream);
+
+    expect(regexGlobCode).toBe(2);
+    expect(regexGlobStdout.output()).toBe("");
+    expect(regexGlobStderr.output()).toContain("--regex and --glob are mutually exclusive");
+
+    const pathAllStdout = writableCapture();
+    const pathAllStderr = writableCapture();
+    const pathAllCode = await main(["node", "miku-grep", "RepositoryMap", root, "--path", "--all-targets"], Readable.from([]), pathAllStdout.stream, pathAllStderr.stream);
+
+    expect(pathAllCode).toBe(2);
+    expect(pathAllStdout.output()).toBe("");
+    expect(pathAllStderr.output()).toContain("--path and --all-targets are mutually exclusive");
   });
 
   test("dist CLI process returns exit 0 with parseable stdout JSON", async () => {
